@@ -1,0 +1,342 @@
+<!--
+Simple GTA-like 2D top-down demo (single-file)
+How to use:
+ 1. Save this file as gta-2d_singlefile.html
+ 2. Open it in a browser (Chrome/Edge/Firefox) — no server required.
+ 3. Controls:
+    - Arrow keys / WASD: move (on foot) or drive (in vehicle)
+    - E: enter / exit vehicle when near
+    - Space: shoot
+    - P: pause
+ 4. To put on GitHub: create a new repo and upload this file (or `git add` + `git commit` + `git push`).
+
+This demo focuses on core mechanics: movement, simple tile map, cars you can enter, bullets, basic NPCs.
+It uses only HTML/CSS/JavaScript and draws everything with canvas.
+Feel free to ask for sprites, sound, expanding the map, saving scores, or turning into multiple files.
+--><!doctype html>
+
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GTA 2D — Demo (single-file)</title>
+  <style>
+    :root{--bg:#1f2937}
+    html,body{height:100%;margin:0;background:var(--bg);color:#e5e7eb;font-family:Inter, system-ui, sans-serif}
+    .wrap{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column}
+    canvas{background:#6b7280;box-shadow:0 10px 30px rgba(0,0,0,0.6);border-radius:6px}
+    .hud{margin-top:10px;display:flex;gap:12px;align-items:center}
+    .hint{font-size:13px;opacity:.85}
+    .btn{background:#111827;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.04)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="960" height="640"></canvas>
+    <div class="hud">
+      <div class="hint">WASD / Arrow keys — move · E — enter/exit car · Space — shoot · P — pause</div>
+      <div class="btn" id="fps">FPS: 0</div>
+    </div>
+  </div><script>
+/* ====== Simple 2D GTA-like demo ======
+   Single-file HTML/CSS/JS
+   Draws world with tiles, player, cars, NPCs and bullets.
+*/
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// --- Utility ---
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const dist = (a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const rand = (a,b)=>a+Math.random()*(b-a);
+
+// --- Input ---
+const keys = {};
+window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(e.key===' '){ e.preventDefault(); } });
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+// --- Game state ---
+let lastTime = performance.now();
+let paused = false;
+let fpsCounter = {frame:0,time:0,fps:0};
+
+// Map: 0 = road, 1 = grass, 2 = wall
+const TILE = 48;
+const MAP_W = Math.ceil(W/TILE)+4;
+const MAP_H = Math.ceil(H/TILE)+4;
+
+// simple map generator — city blocks
+const map = [];
+for(let y=0;y<MAP_H;y++){
+  map[y]=[];
+  for(let x=0;x<MAP_W;x++){
+    if(x%6===0 || y%6===0) map[y][x]=0; // roads
+    else if(Math.random()<0.03) map[y][x]=2; // random wall/building
+    else map[y][x]=1; // grass/block
+  }
+}
+
+function tileAt(px,py){
+  const tx = Math.floor(px/TILE), ty = Math.floor(py/TILE);
+  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return 2;
+  return map[ty][tx];
+}
+
+// Player
+const player = {
+  x: W/2, y: H/2, r:14, speed:120, color:'#ffd166',
+  angle:0, inVehicle: null
+};
+
+// Vehicles pool
+const vehicles = [];
+for(let i=0;i<6;i++){
+  vehicles.push({x:rand(100,W-100), y:rand(100,H-100), w:36, h:20, angle:0, speed:0, maxSpeed:180, color:'#4cc9f0', id:i, driver:null});
+}
+
+// NPC pedestrians
+const npcs = [];
+for(let i=0;i<10;i++){
+  npcs.push({x:rand(50,W-50), y:rand(50,H-50), r:10, speed:30, dir:rand(0,Math.PI*2)});
+}
+
+// Bullets
+const bullets = [];
+
+// --- Collision helpers ---
+function isBlockedAt(x,y){
+  return tileAt(x,y)===2;
+}
+
+function collideMapCircle(obj){
+  // simple axis-based push-out for walls (tile-level)
+  const left = obj.x - obj.r;
+  const right = obj.x + obj.r;
+  const top = obj.y - obj.r;
+  const bottom = obj.y + obj.r;
+  const cells = [];
+  for(let yy=Math.floor(top/TILE); yy<=Math.floor(bottom/TILE); yy++){
+    for(let xx=Math.floor(left/TILE); xx<=Math.floor(right/TILE); xx++){
+      if(xx<0||yy<0||xx>=MAP_W||yy>=MAP_H) continue;
+      if(map[yy][xx]===2){
+        cells.push({x:xx*TILE+TILE/2, y:yy*TILE+TILE/2});
+      }
+    }
+  }
+  for(const c of cells){
+    const dx = obj.x - c.x;
+    const dy = obj.y - c.y;
+    const d = Math.hypot(dx,dy)||0.001;
+    const overlap = obj.r + TILE/2 - d;
+    if(overlap>0){
+      obj.x += (dx/d)*overlap;
+      obj.y += (dy/d)*overlap;
+    }
+  }
+}
+
+// --- Player update ---
+function updatePlayer(dt){
+  if(player.inVehicle==null){
+    // on foot movement
+    let vx=0, vy=0;
+    if(keys['arrowup']||keys['w']) vy -= 1;
+    if(keys['arrowdown']||keys['s']) vy += 1;
+    if(keys['arrowleft']||keys['a']) vx -= 1;
+    if(keys['arrowright']||keys['d']) vx += 1;
+    const len = Math.hypot(vx,vy);
+    if(len>0){ vx/=len; vy/=len; player.x += vx * player.speed * dt; player.y += vy * player.speed * dt; player.angle = Math.atan2(vy,vx); }
+    // collision with map
+    collideMapCircle(player);
+
+    // shoot
+    if(keys[' ']){
+      if(!player._lastShot || performance.now()-player._lastShot>200){
+        player._lastShot = performance.now();
+        bullets.push({x:player.x + Math.cos(player.angle)*player.r, y:player.y + Math.sin(player.angle)*player.r, vx:Math.cos(player.angle)*420, vy:Math.sin(player.angle)*420, life:2});
+      }
+    }
+
+    // check for enter vehicle
+    if(keys['e']){
+      for(const v of vehicles){
+        if(dist(player,v) < 36 && v.driver==null){
+          player.inVehicle = v; v.driver = 'player'; // transfer control
+          // center player in vehicle
+          player.x = v.x; player.y = v.y;
+          break;
+        }
+      }
+    }
+  } else {
+    // driving
+    const v = player.inVehicle;
+    // throttle
+    if(keys['arrowup']||keys['w']) v.speed += 200*dt;
+    else v.speed -= 150*dt;
+    if(keys['arrowleft']||keys['a']) v.angle -= 2.6*dt * (1 + Math.abs(v.speed)/200);
+    if(keys['arrowright']||keys['d']) v.angle += 2.6*dt * (1 + Math.abs(v.speed)/200);
+    // clamp
+    v.speed = clamp(v.speed, -v.maxSpeed*0.4, v.maxSpeed);
+    // friction
+    v.speed *= (1 - clamp(0.6*dt,0,0.6));
+    v.x += Math.cos(v.angle) * v.speed * dt;
+    v.y += Math.sin(v.angle) * v.speed * dt;
+    // collision vehicle vs map
+    // simple bounding circle
+    const vehHit = {x:v.x, y:v.y, r:Math.max(v.w,v.h)};
+    collideMapCircle(vehHit);
+    v.x = vehHit.x; v.y = vehHit.y;
+    // sync player position with vehicle
+    player.x = v.x; player.y = v.y;
+
+    // exit vehicle
+    if(keys['e']){
+      // spawn player beside vehicle
+      player.inVehicle.driver = null;
+      player.inVehicle = null;
+      // push out
+      player.x += Math.cos(v.angle+Math.PI/2)* (v.w+player.r);
+      player.y += Math.sin(v.angle+Math.PI/2)* (v.w+player.r);
+    }
+
+    // shoot while driving
+    if(keys[' ']){
+      if(!v._lastShot || performance.now()-v._lastShot>250){
+        v._lastShot = performance.now();
+        bullets.push({x:v.x + Math.cos(v.angle)*v.w, y:v.y + Math.sin(v.angle)*v.w, vx:Math.cos(v.angle)*520 + v.speed*0.1, vy:Math.sin(v.angle)*520 + v.speed*0.1, life:2});
+      }
+    }
+  }
+}
+
+// --- NPC update ---
+function updateNpcs(dt){
+  for(const n of npcs){
+    n.x += Math.cos(n.dir)*n.speed*dt;
+    n.y += Math.sin(n.dir)*n.speed*dt;
+    if(Math.random()<0.01) n.dir += rand(-1,1);
+    if(isBlockedAt(n.x,n.y) || n.x<10||n.y<10||n.x>W-10||n.y>H-10) n.dir += Math.PI*.5;
+    collideMapCircle({x:n.x,y:n.y,r:n.r});
+  }
+}
+
+// --- Vehicles AI ---
+function updateVehicles(dt){
+  for(const v of vehicles){
+    if(v.driver==null){
+      // free vehicle slowly drifting - small AI
+      v.speed += rand(-10,10)*dt;
+      v.speed = clamp(v.speed, -v.maxSpeed*0.25, v.maxSpeed*0.6);
+      v.angle += rand(-0.5,0.5)*dt;
+      v.x += Math.cos(v.angle)*v.speed*dt;
+      v.y += Math.sin(v.angle)*v.speed*dt;
+      // bounce off walls
+      if(isBlockedAt(v.x,v.y)||v.x<20||v.y<20||v.x>W-20||v.y>H-20) v.angle += Math.PI*0.6;
+    }
+  }
+}
+
+// --- Bullets update ---
+function updateBullets(dt){
+  for(let i=bullets.length-1;i>=0;i--){
+    const b = bullets[i];
+    b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt;
+    // hit map
+    if(isBlockedAt(b.x,b.y)) { bullets.splice(i,1); continue; }
+    if(b.life<=0) bullets.splice(i,1);
+    // hit npcs / vehicles
+    for(const n of npcs){ if(Math.hypot(n.x-b.x,n.y-b.y) < n.r+3){ n.x += rand(-20,20); n.y += rand(-20,20); bullets.splice(i,1); break; } }
+    for(const v of vehicles){ if(Math.hypot(v.x-b.x,v.y-b.y) < Math.max(v.w,v.h)+3){ v.x += Math.cos(v.angle+Math.PI/2)*10; bullets.splice(i,1); break; } }
+  }
+}
+
+// --- Render ---
+function draw(){
+  // clear
+  ctx.clearRect(0,0,W,H);
+
+  // draw tiles
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      const t = map[y][x];
+      const px = x*TILE, py = y*TILE;
+      if(t===0){ // road
+        ctx.fillStyle = '#4b5563';
+        ctx.fillRect(px,py,TILE,TILE);
+        // lane marks
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        ctx.fillRect(px+TILE/2-2,py+6,4,TILE-12);
+      } else if(t===1){ // grass
+        ctx.fillStyle = '#2b6b2b'; ctx.fillRect(px,py,TILE,TILE);
+      } else { // building / wall
+        ctx.fillStyle = '#374151'; ctx.fillRect(px,py,TILE,TILE);
+        ctx.fillStyle = '#111827'; ctx.fillRect(px+6,py+6,TILE-12,TILE-12);
+      }
+    }
+  }
+
+  // vehicles
+  for(const v of vehicles){
+    ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle);
+    ctx.fillStyle = v.color; ctx.fillRect(-v.w/2,-v.h/2,v.w,v.h);
+    // windows
+    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(2,-v.h/4,v.w/3,v.h/2);
+    ctx.restore();
+  }
+
+  // bullets
+  for(const b of bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fillStyle='#ffb4a2'; ctx.fill(); }
+
+  // npcs
+  for(const n of npcs){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2); ctx.fillStyle='#c084fc'; ctx.fill(); }
+
+  // player
+  if(player.inVehicle==null){
+    ctx.save(); ctx.translate(player.x,player.y); ctx.rotate(player.angle);
+    // body
+    ctx.fillStyle = player.color; ctx.beginPath(); ctx.arc(0,0,player.r,0,Math.PI*2); ctx.fill();
+    // direction marker
+    ctx.fillStyle='#ef476f'; ctx.fillRect(player.r-6,-4,8,8);
+    ctx.restore();
+  } else {
+    // player is hidden when inside vehicle — vehicle drawn above
+    // draw small indicator
+    ctx.beginPath(); ctx.arc(player.x,player.y,6,0,Math.PI*2); ctx.fillStyle='rgba(0,0,0,0)'; ctx.fill();
+  }
+
+  // HUD crosshair
+  ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.moveTo(W/2-8,H/2); ctx.lineTo(W/2+8,H/2); ctx.moveTo(W/2,H/2-8); ctx.lineTo(W/2,H/2+8); ctx.stroke();
+}
+
+// --- Main loop ---
+function loop(t){
+  const dt = Math.min((t-lastTime)/1000, 0.05);
+  lastTime = t;
+  if(!paused){
+    updatePlayer(dt);
+    updateNpcs(dt);
+    updateVehicles(dt);
+    updateBullets(dt);
+  }
+  draw();
+
+  // fps
+  fpsCounter.frame++;
+  fpsCounter.time += dt;
+  if(fpsCounter.time>0.5){ fpsCounter.fps = Math.round(fpsCounter.frame / fpsCounter.time); fpsCounter.frame=0; fpsCounter.time=0; document.getElementById('fps').textContent = 'FPS: '+fpsCounter.fps; }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// toggle pause
+window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='p'){ paused = !paused; } });
+
+// Simple resizing: keep canvas centered — optional
+window.addEventListener('resize', ()=>{/* noop - fixed size for demo */});
+
+</script></body>
+</html>
