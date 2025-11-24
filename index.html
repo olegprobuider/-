@@ -1,342 +1,289 @@
 <!--
-Simple GTA-like 2D top-down demo (single-file)
-How to use:
- 1. Save this file as gta-2d_singlefile.html
- 2. Open it in a browser (Chrome/Edge/Firefox) — no server required.
- 3. Controls:
-    - Arrow keys / WASD: move (on foot) or drive (in vehicle)
-    - E: enter / exit vehicle when near
-    - Space: shoot
-    - P: pause
- 4. To put on GitHub: create a new repo and upload this file (or `git add` + `git commit` + `git push`).
+GTA 2D — Extended single-file demo
+Added features requested:
+ - mobile touch controls (virtual joystick + buttons)
+ - звезды розыска (wanted stars) with escalation
+ - выбор оружия (1 — Пистолет, 2 — Дробовик), переключение и индикатор
+ - деньги, выпадающие при убийстве NPC (сбор валюты)
+ - система пометки угнанных машин (stolen flag)
+ - простая звуковая подсистема (WebAudio) для выстрелов/сборов/посадок в машину
+ - "спрайты" — простые рисунки на canvas; можно заменить на изображения
+ - генерация карты: процедурная сетка улиц/кварталов
 
-This demo focuses on core mechanics: movement, simple tile map, cars you can enter, bullets, basic NPCs.
-It uses only HTML/CSS/JavaScript and draws everything with canvas.
-Feel free to ask for sprites, sound, expanding the map, saving scores, or turning into multiple files.
+Сохраните как `gta-2d_singlefile.html` и откройте в браузере.
 --><!doctype html>
 
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>GTA 2D — Demo (single-file)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=0">
+  <title>GTA 2D — Extended Demo</title>
   <style>
-    :root{--bg:#1f2937}
+    :root{--bg:#0b1220}
     html,body{height:100%;margin:0;background:var(--bg);color:#e5e7eb;font-family:Inter, system-ui, sans-serif}
     .wrap{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column}
-    canvas{background:#6b7280;box-shadow:0 10px 30px rgba(0,0,0,0.6);border-radius:6px}
-    .hud{margin-top:10px;display:flex;gap:12px;align-items:center}
-    .hint{font-size:13px;opacity:.85}
+    canvas{background:#7b8794;box-shadow:0 10px 30px rgba(0,0,0,0.6);border-radius:6px;touch-action:none}
+    .hud{margin-top:8px;display:flex;gap:12px;align-items:center}
+    .hint{font-size:13px;opacity:.95}
     .btn{background:#111827;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.04)}
+    /* mobile controls */
+    .touch-controls{position:fixed;left:0;bottom:0;width:100%;height:46%;pointer-events:none}
+    .left-joy, .right-buttons{position:absolute;pointer-events:auto}
+    .left-joy{left:8px;bottom:8px;width:38%;max-width:360px;height:60%;}
+    .right-buttons{right:8px;bottom:8px;width:120px;height:220px;display:flex;flex-direction:column;gap:10px;align-items:center}
+    .btn-touch{width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:18px;color:white}/* top HUD */
+.top-hud{position:fixed;left:12px;top:12px;color:#fff}
+.money{font-weight:700}
+.weapons{margin-top:6px}
+.wanted{margin-left:12px}
+
   </style>
 </head>
 <body>
   <div class="wrap">
     <canvas id="game" width="960" height="640"></canvas>
     <div class="hud">
-      <div class="hint">WASD / Arrow keys — move · E — enter/exit car · Space — shoot · P — pause</div>
+      <div class="hint">WASD / стрелки — движение · E — сесть/выйти · Space — стрельба · 1/2 — выбор оружия · P — Пауза</div>
       <div class="btn" id="fps">FPS: 0</div>
     </div>
+  </div>  <div class="top-hud">
+    <div>Деньги: <span class="money" id="money">0</span>₴ <span class="wanted" id="wanted"></span></div>
+    <div class="weapons">Оружие: <span id="weaponName">Пистолет</span> · Патроны: <span id="ammo">∞</span></div>
+  </div>  <!-- Mobile touch controls -->  <div class="touch-controls">
+    <div class="left-joy" id="leftJoy"></div>
+    <div class="right-buttons">
+      <div class="btn-touch" id="btnShoot">🔫</div>
+      <div style="display:flex;gap:8px"><div class="btn-touch" id="btnEnter">E</div><div class="btn-touch" id="btnSwitch">1/2</div></div>
+    </div>
   </div><script>
-/* ====== Simple 2D GTA-like demo ======
-   Single-file HTML/CSS/JS
-   Draws world with tiles, player, cars, NPCs and bullets.
-*/
-
+/* Extended demo JS */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
-// --- Utility ---
-const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-const dist = (a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-const rand = (a,b)=>a+Math.random()*(b-a);
+// utils
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rand=(a,b)=>a+Math.random()*(b-a);
+const nowMs=()=>performance.now();
 
-// --- Input ---
-const keys = {};
-window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(e.key===' '){ e.preventDefault(); } });
-window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+// Audio simple helper
+const AudioSystem = (()=>{
+  const ctx = new (window.AudioContext||window.webkitAudioContext)();
+  function beep(freq=440, time=0.08, type='sine', vol=0.12){
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = type; o.frequency.value = freq; g.gain.value = vol;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + time);
+  }
+  function sampleShoot(){ beep(900,0.06,'square',0.06); }
+  function samplePickup(){ beep(1200,0.06,'sine',0.06); }
+  function sampleEnter(){ beep(400,0.08,'sawtooth',0.06); }
+  function unlock(){ if(ctx.state==='suspended') ctx.resume(); }
+  return {sampleShoot,samplePickup,sampleEnter,unlock};
+})();
 
-// --- Game state ---
-let lastTime = performance.now();
-let paused = false;
-let fpsCounter = {frame:0,time:0,fps:0};
+// Input
+const keys = {}; window.addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; if(e.key===' ') e.preventDefault(); AudioSystem.unlock(); });
+window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
 
-// Map: 0 = road, 1 = grass, 2 = wall
-const TILE = 48;
-const MAP_W = Math.ceil(W/TILE)+4;
-const MAP_H = Math.ceil(H/TILE)+4;
+// touch controls state
+let touchState = {jx:0,jy:0,active:false,shoot:false,enter:false,switch:false};
+// build simple joystick element
+const leftJoy = document.getElementById('leftJoy');
+(function buildJoy(){
+  leftJoy.style.touchAction='none';
+  leftJoy.style.position='relative';
+  const base = document.createElement('div');
+  base.style.width='100%'; base.style.height='100%'; base.style.borderRadius='50%'; base.style.background='rgba(0,0,0,0)';
+  leftJoy.appendChild(base);
+  const knob = document.createElement('div');
+  knob.style.width='120px'; knob.style.height='120px'; knob.style.borderRadius='50%'; knob.style.position='absolute'; knob.style.left='20px'; knob.style.bottom='20px'; knob.style.background='rgba(255,255,255,0.08)'; knob.style.display='flex'; knob.style.alignItems='center'; knob.style.justifyContent='center'; knob.style.fontSize='22px'; knob.style.color='white'; leftJoy.appendChild(knob);
+  // touch handlers
+  let id=null, startX=0, startY=0, centerX=60, centerY=window.innerHeight*0.6 - 60; // approximate
+  function updateKnob(x,y){ const nx = clamp(x-startX,-60,60); const ny = clamp(y-startY,-60,60); knob.style.transform = `translate(${nx}px,${-ny}px)`; touchState.jx = nx/60; touchState.jy = ny/60; }
+  leftJoy.addEventListener('pointerdown', e=>{ id=e.pointerId; leftJoy.setPointerCapture(id); startX=e.clientX; startY=e.clientY; touchState.active=true; updateKnob(e.clientX,e.clientY); });
+  leftJoy.addEventListener('pointermove', e=>{ if(e.pointerId!==id) return; updateKnob(e.clientX,e.clientY); });
+  leftJoy.addEventListener('pointerup', e=>{ if(e.pointerId!==id) return; leftJoy.releasePointerCapture(id); id=null; touchState.active=false; touchState.jx=0; touchState.jy=0; knob.style.transform='translate(0px,0px)'; });
+})();
+// buttons
+const btnShoot = document.getElementById('btnShoot'); btnShoot.addEventListener('pointerdown',()=>{ touchState.shoot=true; AudioSystem.unlock(); }); btnShoot.addEventListener('pointerup',()=>{ touchState.shoot=false; });
+const btnEnter = document.getElementById('btnEnter'); btnEnter.addEventListener('click',()=>{ touchState.enter=true; setTimeout(()=>touchState.enter=false,100); });
+const btnSwitch = document.getElementById('btnSwitch'); btnSwitch.addEventListener('click',()=>{ touchState.switch=true; setTimeout(()=>touchState.switch=false,100); });
 
-// simple map generator — city blocks
-const map = [];
-for(let y=0;y<MAP_H;y++){
-  map[y]=[];
-  for(let x=0;x<MAP_W;x++){
-    if(x%6===0 || y%6===0) map[y][x]=0; // roads
-    else if(Math.random()<0.03) map[y][x]=2; // random wall/building
-    else map[y][x]=1; // grass/block
+// Game state
+let lastTime = nowMs(); let paused=false;
+const fpsCounter = {frame:0,time:0,fps:0};
+let money = 0; const moneyEl = document.getElementById('money');
+let wantedLevel = 0; const wantedEl = document.getElementById('wanted');
+
+// Map generation: procedural grid of blocks
+const TILE=48; const MAP_W = Math.ceil(W/TILE)+6; const MAP_H = Math.ceil(H/TILE)+6;
+let map = [];
+function genMap(){
+  map = [];
+  // create alternating roads by bands, with random small block obstacles
+  const blockSize = 4 + Math.floor(rand(1,4));
+  for(let y=0;y<MAP_H;y++){
+    map[y]=[];
+    for(let x=0;x<MAP_W;x++){
+      // roads every blockSize tiles
+      if(x%blockSize===0 || y%blockSize===0) map[y][x]=0; // road
+      else if(Math.random()<0.05) map[y][x]=2; // building corner
+      else map[y][x]=1; // grass/lot
+    }
   }
 }
-
-function tileAt(px,py){
-  const tx = Math.floor(px/TILE), ty = Math.floor(py/TILE);
-  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return 2;
-  return map[ty][tx];
-}
+genMap();
+function tileAt(px,py){ const tx=Math.floor(px/TILE), ty=Math.floor(py/TILE); if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return 2; return map[ty][tx]; }
+function isBlockedAt(x,y){ return tileAt(x,y)===2; }
 
 // Player
-const player = {
-  x: W/2, y: H/2, r:14, speed:120, color:'#ffd166',
-  angle:0, inVehicle: null
-};
+const player = {x:W/2,y:H/2,r:14,speed:120,angle:0,inVehicle:null,health:100,weapon:0};
+const weapons = [ {name:'Пистолет', rate:200, bulletSpeed:420}, {name:'Дробовик', rate:700, bulletSpeed:320} ];
+let lastShotTime = 0;
 
-// Vehicles pool
-const vehicles = [];
-for(let i=0;i<6;i++){
-  vehicles.push({x:rand(100,W-100), y:rand(100,H-100), w:36, h:20, angle:0, speed:0, maxSpeed:180, color:'#4cc9f0', id:i, driver:null});
-}
+// Vehicles
+const vehicles=[]; for(let i=0;i<7;i++){ vehicles.push({x:rand(100,W-100),y:rand(100,H-100),w:44,h:26,angle:rand(0,Math.PI*2),speed:0,maxSpeed:200,color:['#4cc9f0','#f72585','#ffd166'][i%3],owner: (Math.random()<0.6? 'npc':'private'),stolen:false,lock:false}); }
 
-// NPC pedestrians
-const npcs = [];
-for(let i=0;i<10;i++){
-  npcs.push({x:rand(50,W-50), y:rand(50,H-50), r:10, speed:30, dir:rand(0,Math.PI*2)});
-}
+// NPCs
+const npcs=[]; for(let i=0;i<12;i++){ npcs.push({x:rand(50,W-50),y:rand(50,H-50),r:10,speed:30,dir:rand(0,Math.PI*2),alive:true}); }
 
-// Bullets
-const bullets = [];
+// Bullets & pickups
+const bullets=[]; const pickups=[];
 
-// --- Collision helpers ---
-function isBlockedAt(x,y){
-  return tileAt(x,y)===2;
-}
+// Collisions
+function collideMapCircle(obj){ const left=obj.x-obj.r, right=obj.x+obj.r, top=obj.y-obj.r, bottom=obj.y+obj.r; const cells=[]; for(let yy=Math.floor(top/TILE); yy<=Math.floor(bottom/TILE); yy++){ for(let xx=Math.floor(left/TILE); xx<=Math.floor(right/TILE); xx++){ if(xx<0||yy<0||xx>=MAP_W||yy>=MAP_H) continue; if(map[yy][xx]===2) cells.push({x:xx*TILE+TILE/2,y:yy*TILE+TILE/2}); } } for(const c of cells){ const dx=obj.x-c.x, dy=obj.y-c.y, d=Math.hypot(dx,dy)||0.001; const overlap = obj.r + TILE/2 - d; if(overlap>0){ obj.x += (dx/d)*overlap; obj.y += (dy/d)*overlap; } } }
 
-function collideMapCircle(obj){
-  // simple axis-based push-out for walls (tile-level)
-  const left = obj.x - obj.r;
-  const right = obj.x + obj.r;
-  const top = obj.y - obj.r;
-  const bottom = obj.y + obj.r;
-  const cells = [];
-  for(let yy=Math.floor(top/TILE); yy<=Math.floor(bottom/TILE); yy++){
-    for(let xx=Math.floor(left/TILE); xx<=Math.floor(right/TILE); xx++){
-      if(xx<0||yy<0||xx>=MAP_W||yy>=MAP_H) continue;
-      if(map[yy][xx]===2){
-        cells.push({x:xx*TILE+TILE/2, y:yy*TILE+TILE/2});
-      }
-    }
-  }
-  for(const c of cells){
-    const dx = obj.x - c.x;
-    const dy = obj.y - c.y;
-    const d = Math.hypot(dx,dy)||0.001;
-    const overlap = obj.r + TILE/2 - d;
-    if(overlap>0){
-      obj.x += (dx/d)*overlap;
-      obj.y += (dy/d)*overlap;
-    }
-  }
-}
-
-// --- Player update ---
+// Update
 function updatePlayer(dt){
-  if(player.inVehicle==null){
-    // on foot movement
-    let vx=0, vy=0;
-    if(keys['arrowup']||keys['w']) vy -= 1;
-    if(keys['arrowdown']||keys['s']) vy += 1;
-    if(keys['arrowleft']||keys['a']) vx -= 1;
-    if(keys['arrowright']||keys['d']) vx += 1;
-    const len = Math.hypot(vx,vy);
-    if(len>0){ vx/=len; vy/=len; player.x += vx * player.speed * dt; player.y += vy * player.speed * dt; player.angle = Math.atan2(vy,vx); }
-    // collision with map
-    collideMapCircle(player);
+  // movement input: keyboard or touch
+  let mvx=0,mvy=0;
+  if(keys['arrowup']||keys['w']) mvy -= 1;
+  if(keys['arrowdown']||keys['s']) mvy += 1;
+  if(keys['arrowleft']||keys['a']) mvx -= 1;
+  if(keys['arrowright']||keys['d']) mvx += 1;
+  if(touchState.active){ mvx += touchState.jx; mvy += -touchState.jy; }
+  const len = Math.hypot(mvx,mvy);
+  if(len>0){ mvx/=len; mvy/=len; player.x += mvx * player.speed * dt; player.y += mvy * player.speed * dt; player.angle = Math.atan2(mvy,mvx); }
+  collideMapCircle(player);
 
-    // shoot
-    if(keys[' ']){
-      if(!player._lastShot || performance.now()-player._lastShot>200){
-        player._lastShot = performance.now();
-        bullets.push({x:player.x + Math.cos(player.angle)*player.r, y:player.y + Math.sin(player.angle)*player.r, vx:Math.cos(player.angle)*420, vy:Math.sin(player.angle)*420, life:2});
-      }
+  // enter/exit vehicle
+  if(keys['e']||touchState.enter){
+    if(player.inVehicle==null){
+      for(const v of vehicles){ if(Math.hypot(player.x-v.x,player.y-v.y) < 48 && !v.lock){ // can enter
+          player.inVehicle=v; v.driver='player'; v.stolen = (v.owner!=='player'); if(v.stolen){ increaseWanted(1); }
+          AudioSystem.sampleEnter(); break;
+      } }
+    } else { // exit
+      player.inVehicle.driver=null; player.inVehicle=null; // push out
+      player.x += Math.cos(player.angle+Math.PI/2)*(30); player.y += Math.sin(player.angle+Math.PI/2)*(30);
     }
+    touchState.enter=false; keys['e']=false;
+  }
 
-    // check for enter vehicle
-    if(keys['e']){
-      for(const v of vehicles){
-        if(dist(player,v) < 36 && v.driver==null){
-          player.inVehicle = v; v.driver = 'player'; // transfer control
-          // center player in vehicle
-          player.x = v.x; player.y = v.y;
-          break;
-        }
-      }
-    }
-  } else {
-    // driving
-    const v = player.inVehicle;
-    // throttle
-    if(keys['arrowup']||keys['w']) v.speed += 200*dt;
-    else v.speed -= 150*dt;
-    if(keys['arrowleft']||keys['a']) v.angle -= 2.6*dt * (1 + Math.abs(v.speed)/200);
-    if(keys['arrowright']||keys['d']) v.angle += 2.6*dt * (1 + Math.abs(v.speed)/200);
-    // clamp
-    v.speed = clamp(v.speed, -v.maxSpeed*0.4, v.maxSpeed);
-    // friction
-    v.speed *= (1 - clamp(0.6*dt,0,0.6));
-    v.x += Math.cos(v.angle) * v.speed * dt;
-    v.y += Math.sin(v.angle) * v.speed * dt;
-    // collision vehicle vs map
-    // simple bounding circle
-    const vehHit = {x:v.x, y:v.y, r:Math.max(v.w,v.h)};
-    collideMapCircle(vehHit);
-    v.x = vehHit.x; v.y = vehHit.y;
-    // sync player position with vehicle
-    player.x = v.x; player.y = v.y;
+  // weapon switch
+  if(keys['1']){ player.weapon=0; keys['1']=false; }
+  if(keys['2']){ player.weapon=1; keys['2']=false; }
+  if(touchState.switch){ player.weapon = (player.weapon+1)%weapons.length; touchState.switch=false; }
+  document.getElementById('weaponName').textContent = weapons[player.weapon].name;
 
-    // exit vehicle
-    if(keys['e']){
-      // spawn player beside vehicle
-      player.inVehicle.driver = null;
-      player.inVehicle = null;
-      // push out
-      player.x += Math.cos(v.angle+Math.PI/2)* (v.w+player.r);
-      player.y += Math.sin(v.angle+Math.PI/2)* (v.w+player.r);
-    }
-
-    // shoot while driving
-    if(keys[' ']){
-      if(!v._lastShot || performance.now()-v._lastShot>250){
-        v._lastShot = performance.now();
-        bullets.push({x:v.x + Math.cos(v.angle)*v.w, y:v.y + Math.sin(v.angle)*v.w, vx:Math.cos(v.angle)*520 + v.speed*0.1, vy:Math.sin(v.angle)*520 + v.speed*0.1, life:2});
-      }
-    }
+  // shooting
+  const shootPressed = keys[' '] || touchState.shoot;
+  const w = weapons[player.weapon];
+  if(shootPressed && nowMs() - lastShotTime > w.rate){
+    lastShotTime = nowMs();
+    const angle = player.inVehicle? player.inVehicle.angle : player.angle;
+    const bx = (player.inVehicle? player.inVehicle.x : player.x) + Math.cos(angle) * 20;
+    const by = (player.inVehicle? player.inVehicle.y : player.y) + Math.sin(angle) * 20;
+    bullets.push({x:bx,y:by,vx:Math.cos(angle)*w.bulletSpeed,vy:Math.sin(angle)*w.bulletSpeed,life:2,owner:'player'});
+    AudioSystem.sampleShoot();
   }
 }
 
-// --- NPC update ---
-function updateNpcs(dt){
-  for(const n of npcs){
-    n.x += Math.cos(n.dir)*n.speed*dt;
-    n.y += Math.sin(n.dir)*n.speed*dt;
-    if(Math.random()<0.01) n.dir += rand(-1,1);
-    if(isBlockedAt(n.x,n.y) || n.x<10||n.y<10||n.x>W-10||n.y>H-10) n.dir += Math.PI*.5;
-    collideMapCircle({x:n.x,y:n.y,r:n.r});
-  }
-}
-
-// --- Vehicles AI ---
 function updateVehicles(dt){
   for(const v of vehicles){
-    if(v.driver==null){
-      // free vehicle slowly drifting - small AI
-      v.speed += rand(-10,10)*dt;
-      v.speed = clamp(v.speed, -v.maxSpeed*0.25, v.maxSpeed*0.6);
-      v.angle += rand(-0.5,0.5)*dt;
-      v.x += Math.cos(v.angle)*v.speed*dt;
-      v.y += Math.sin(v.angle)*v.speed*dt;
-      // bounce off walls
-      if(isBlockedAt(v.x,v.y)||v.x<20||v.y<20||v.x>W-20||v.y>H-20) v.angle += Math.PI*0.6;
+    if(v.driver=='player'){
+      // controlled
+      if(keys['arrowup']||keys['w']||touchState.active && Math.hypot(touchState.jx,touchState.jy)>0.2){ v.speed += 300*dt; }
+      else v.speed -= 200*dt;
+      if(keys['arrowleft']||keys['a']) v.angle -= 2.2*dt * (1 + Math.abs(v.speed)/200);
+      if(keys['arrowright']||keys['d']) v.angle += 2.2*dt * (1 + Math.abs(v.speed)/200);
+      v.speed = clamp(v.speed, -v.maxSpeed*0.4, v.maxSpeed);
+      v.speed *= (1 - clamp(0.6*dt,0,0.6));
+      v.x += Math.cos(v.angle) * v.speed * dt; v.y += Math.sin(v.angle)*v.speed*dt;
+      // collide
+      collideMapCircle({x:v.x,y:v.y,r:Math.max(v.w,v.h)});
+      // sync player
+      player.x = v.x; player.y = v.y;
+    } else {
+      // simple idle AI
+      v.x += Math.cos(v.angle) * (v.speed||10) * dt; v.y += Math.sin(v.angle) * (v.speed||10) * dt;
+      if(isBlockedAt(v.x,v.y) || v.x<20||v.y<20||v.x>W-20||v.y>H-20) v.angle += Math.PI*0.6;
     }
   }
 }
 
-// --- Bullets update ---
+function updateNpcs(dt){
+  for(const n of npcs){ if(!n.alive) continue; n.x += Math.cos(n.dir)*n.speed*dt; n.y += Math.sin(n.dir)*n.speed*dt; if(Math.random()<0.01) n.dir += rand(-1,1); if(isBlockedAt(n.x,n.y)||n.x<10||n.y<10||n.x>W-10||n.y>H-10) n.dir += Math.PI*0.5; collideMapCircle({x:n.x,y:n.y,r:n.r}); }
+}
+
 function updateBullets(dt){
-  for(let i=bullets.length-1;i>=0;i--){
-    const b = bullets[i];
-    b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt;
-    // hit map
-    if(isBlockedAt(b.x,b.y)) { bullets.splice(i,1); continue; }
-    if(b.life<=0) bullets.splice(i,1);
-    // hit npcs / vehicles
-    for(const n of npcs){ if(Math.hypot(n.x-b.x,n.y-b.y) < n.r+3){ n.x += rand(-20,20); n.y += rand(-20,20); bullets.splice(i,1); break; } }
-    for(const v of vehicles){ if(Math.hypot(v.x-b.x,v.y-b.y) < Math.max(v.w,v.h)+3){ v.x += Math.cos(v.angle+Math.PI/2)*10; bullets.splice(i,1); break; } }
+  for(let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt; if(isBlockedAt(b.x,b.y)){ bullets.splice(i,1); continue; } if(b.life<=0){ bullets.splice(i,1); continue; }
+    // hit npcs
+    for(const n of npcs){ if(n.alive && Math.hypot(n.x-b.x,n.y-b.y) < n.r+3){ n.alive=false; bullets.splice(i,1); spawnMoney(n.x,n.y); increaseWanted(1); break; } }
+    // hit vehicles (minor effect)
+    for(const v of vehicles){ if(Math.hypot(v.x-b.x,v.y-b.y) < Math.max(v.w,v.h)+3){ bullets.splice(i,1); break; } }
   }
 }
 
-// --- Render ---
-function draw(){
-  // clear
-  ctx.clearRect(0,0,W,H);
+function spawnMoney(x,y){ const amount = Math.round(rand(5,40)); pickups.push({x,y,amount,life:6}); AudioSystem.samplePickup(); }
 
-  // draw tiles
-  for(let y=0;y<MAP_H;y++){
-    for(let x=0;x<MAP_W;x++){
-      const t = map[y][x];
-      const px = x*TILE, py = y*TILE;
-      if(t===0){ // road
-        ctx.fillStyle = '#4b5563';
-        ctx.fillRect(px,py,TILE,TILE);
-        // lane marks
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(px+TILE/2-2,py+6,4,TILE-12);
-      } else if(t===1){ // grass
-        ctx.fillStyle = '#2b6b2b'; ctx.fillRect(px,py,TILE,TILE);
-      } else { // building / wall
-        ctx.fillStyle = '#374151'; ctx.fillRect(px,py,TILE,TILE);
-        ctx.fillStyle = '#111827'; ctx.fillRect(px+6,py+6,TILE-12,TILE-12);
-      }
-    }
-  }
+function updatePickups(dt){ for(let i=pickups.length-1;i>=0;i--){ const p=pickups[i]; p.life-=dt; if(Math.hypot(player.x-p.x,player.y-p.y) < 24){ money += p.amount; moneyEl.textContent = money; pickups.splice(i,1); continue; } if(p.life<=0) pickups.splice(i,1); } }
 
-  // vehicles
-  for(const v of vehicles){
-    ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle);
-    ctx.fillStyle = v.color; ctx.fillRect(-v.w/2,-v.h/2,v.w,v.h);
-    // windows
-    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(2,-v.h/4,v.w/3,v.h/2);
-    ctx.restore();
-  }
+function increaseWanted(v){ wantedLevel = clamp(wantedLevel+v,0,5); updateWantedUI(); }
+function decreaseWanted(v){ wantedLevel = clamp(wantedLevel-v,0,5); updateWantedUI(); }
+function updateWantedUI(){ wantedEl.innerHTML = 'Розыск: ' + '★'.repeat(wantedLevel) + '☆'.repeat(5-wantedLevel); }
+updateWantedUI();
 
-  // bullets
+// Render helpers for sprites (simple)
+function drawCar(v){ ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle); ctx.fillStyle=v.color; ctx.fillRect(-v.w/2,-v.h/2,v.w,v.h); // windows
+ ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(2,-v.h/4,v.w/3,v.h/2); // stolen marker
+ if(v.stolen){ ctx.fillStyle='rgba(255,0,0,0.9)'; ctx.fillRect(-v.w/2, -v.h/2 -6, 6, 6); }
+ ctx.restore(); }
+function drawNpc(n){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2); ctx.fillStyle=n.alive? '#c084fc':'#444'; ctx.fill(); }
+function drawPlayer(){ if(player.inVehicle==null){ ctx.save(); ctx.translate(player.x,player.y); ctx.rotate(player.angle); ctx.beginPath(); ctx.arc(0,0,player.r,0,Math.PI*2); ctx.fillStyle='#ffd166'; ctx.fill(); ctx.fillStyle='#ef476f'; ctx.fillRect(player.r-6,-4,8,8); ctx.restore(); } }
+
+// draw map
+function drawMap(){ for(let y=0;y<MAP_H;y++){ for(let x=0;x<MAP_W;x++){ const t=map[y][x]; const px=x*TILE, py=y*TILE; if(t===0){ ctx.fillStyle='#4b5563'; ctx.fillRect(px,py,TILE,TILE); ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fillRect(px+TILE/2-2,py+6,4,TILE-12); } else if(t===1){ ctx.fillStyle='#2b6b2b'; ctx.fillRect(px,py,TILE,TILE); } else { ctx.fillStyle='#374151'; ctx.fillRect(px,py,TILE,TILE); ctx.fillStyle='#111827'; ctx.fillRect(px+6,py+6,TILE-12,TILE-12); } } } }
+
+// Main loop
+function loop(t){ const dt = Math.min((t-lastTime)/1000, 0.05); lastTime = t; if(!paused){ updatePlayer(dt); updateNpcs(dt); updateVehicles(dt); updateBullets(dt); updatePickups(dt); }
+  // draw
+  ctx.clearRect(0,0,W,H); drawMap(); for(const v of vehicles) drawCar(v); for(const p of pickups){ ctx.fillStyle='#ffdd57'; ctx.beginPath(); ctx.arc(p.x,p.y,8,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#000'; ctx.fillText(p.amount, p.x-6, p.y+4); }
   for(const b of bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fillStyle='#ffb4a2'; ctx.fill(); }
-
-  // npcs
-  for(const n of npcs){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2); ctx.fillStyle='#c084fc'; ctx.fill(); }
-
-  // player
-  if(player.inVehicle==null){
-    ctx.save(); ctx.translate(player.x,player.y); ctx.rotate(player.angle);
-    // body
-    ctx.fillStyle = player.color; ctx.beginPath(); ctx.arc(0,0,player.r,0,Math.PI*2); ctx.fill();
-    // direction marker
-    ctx.fillStyle='#ef476f'; ctx.fillRect(player.r-6,-4,8,8);
-    ctx.restore();
-  } else {
-    // player is hidden when inside vehicle — vehicle drawn above
-    // draw small indicator
-    ctx.beginPath(); ctx.arc(player.x,player.y,6,0,Math.PI*2); ctx.fillStyle='rgba(0,0,0,0)'; ctx.fill();
-  }
-
-  // HUD crosshair
-  ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.moveTo(W/2-8,H/2); ctx.lineTo(W/2+8,H/2); ctx.moveTo(W/2,H/2-8); ctx.lineTo(W/2,H/2+8); ctx.stroke();
-}
-
-// --- Main loop ---
-function loop(t){
-  const dt = Math.min((t-lastTime)/1000, 0.05);
-  lastTime = t;
-  if(!paused){
-    updatePlayer(dt);
-    updateNpcs(dt);
-    updateVehicles(dt);
-    updateBullets(dt);
-  }
-  draw();
+  for(const n of npcs) drawNpc(n); drawPlayer(); // HUD crosshair
+  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.moveTo(W/2-8,H/2); ctx.lineTo(W/2+8,H/2); ctx.moveTo(W/2,H/2-8); ctx.lineTo(W/2,H/2+8); ctx.stroke();
 
   // fps
-  fpsCounter.frame++;
-  fpsCounter.time += dt;
-  if(fpsCounter.time>0.5){ fpsCounter.fps = Math.round(fpsCounter.frame / fpsCounter.time); fpsCounter.frame=0; fpsCounter.time=0; document.getElementById('fps').textContent = 'FPS: '+fpsCounter.fps; }
+  fpsCounter.frame++; fpsCounter.time += dt; if(fpsCounter.time>0.5){ fpsCounter.fps = Math.round(fpsCounter.frame / fpsCounter.time); fpsCounter.frame=0; fpsCounter.time=0; document.getElementById('fps').textContent = 'FPS: '+fpsCounter.fps; }
 
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-// toggle pause
-window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='p'){ paused = !paused; } });
+// Pause toggle
+window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='p') paused=!paused; });
 
-// Simple resizing: keep canvas centered — optional
-window.addEventListener('resize', ()=>{/* noop - fixed size for demo */});
+// touch -> feed keyboard-like for continuous actions
+setInterval(()=>{ // handle touch shoot mapping to space key while active
+  if(touchState.shoot) keys[' ']=true; else keys[' ']=false;
+}, 50);
+
+// Helpful: regenerate map and respawn on demand
+window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='r'){ genMap(); } });
+
+// initial UI
+document.getElementById('ammo').textContent = '∞';
 
 </script></body>
 </html>
