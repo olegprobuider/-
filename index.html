@@ -1,289 +1,2192 @@
-<!--
-GTA 2D — Extended single-file demo
-Added features requested:
- - mobile touch controls (virtual joystick + buttons)
- - звезды розыска (wanted stars) with escalation
- - выбор оружия (1 — Пистолет, 2 — Дробовик), переключение и индикатор
- - деньги, выпадающие при убийстве NPC (сбор валюты)
- - система пометки угнанных машин (stolen flag)
- - простая звуковая подсистема (WebAudio) для выстрелов/сборов/посадок в машину
- - "спрайты" — простые рисунки на canvas; можно заменить на изображения
- - генерация карты: процедурная сетка улиц/кварталов
-
-Сохраните как `gta-2d_singlefile.html` и откройте в браузере.
---><!doctype html>
-
-<html lang="ru">
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=0">
-  <title>GTA 2D — Extended Demo</title>
-  <style>
-    :root{--bg:#0b1220}
-    html,body{height:100%;margin:0;background:var(--bg);color:#e5e7eb;font-family:Inter, system-ui, sans-serif}
-    .wrap{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column}
-    canvas{background:#7b8794;box-shadow:0 10px 30px rgba(0,0,0,0.6);border-radius:6px;touch-action:none}
-    .hud{margin-top:8px;display:flex;gap:12px;align-items:center}
-    .hint{font-size:13px;opacity:.95}
-    .btn{background:#111827;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.04)}
-    /* mobile controls */
-    .touch-controls{position:fixed;left:0;bottom:0;width:100%;height:46%;pointer-events:none}
-    .left-joy, .right-buttons{position:absolute;pointer-events:auto}
-    .left-joy{left:8px;bottom:8px;width:38%;max-width:360px;height:60%;}
-    .right-buttons{right:8px;bottom:8px;width:120px;height:220px;display:flex;flex-direction:column;gap:10px;align-items:center}
-    .btn-touch{width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:18px;color:white}/* top HUD */
-.top-hud{position:fixed;left:12px;top:12px;color:#fff}
-.money{font-weight:700}
-.weapons{margin-top:6px}
-.wanted{margin-left:12px}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Windows Light OS Demo</title>
+    <style>
+        /* =========================================================================
+        | 1. BASE STYLES & THEME VARIABLES
+        ========================================================================= */
+        :root {
+            /* Light Theme */
+            --color-bg-light: #f4f6f9;
+            --color-surface-light: #ffffff;
+            --color-primary-light: #0078d4;
+            --color-text-light: #1f1f1f;
+            --color-border-light: #e0e0e0;
+            --shadow-light: 0 4px 12px rgba(0, 0, 0, 0.1);
+            --shadow-window-light: 0 8px 24px rgba(0, 0, 0, 0.15);
+            --color-start-menu-light: rgba(255, 255, 255, 0.9);
 
-  </style>
+            /* Dark Theme */
+            --color-bg-dark: #212121;
+            --color-surface-dark: #2f2f2f;
+            --color-primary-dark: #00bcd4;
+            --color-text-dark: #f0f0f0;
+            --color-border-dark: #3a3a3a;
+            --shadow-dark: 0 4px 12px rgba(0, 0, 0, 0.4);
+            --shadow-window-dark: 0 8px 24px rgba(0, 0, 0, 0.4);
+            --color-start-menu-dark: rgba(30, 30, 30, 0.95);
+
+            /* Current Theme (Default to Light) */
+            --color-bg: var(--color-bg-light);
+            --color-surface: var(--color-surface-light);
+            --color-primary: var(--color-primary-light);
+            --color-text: var(--color-text-light);
+            --color-border: var(--color-border-light);
+            --shadow: var(--shadow-light);
+            --shadow-window: var(--shadow-window-light);
+            --color-start-menu: var(--color-start-menu-light);
+            --color-taskbar: rgba(255, 255, 255, 0.7);
+
+            /* Other Constants */
+            --taskbar-height: 48px;
+            --window-border-size: 1px;
+        }
+
+        .dark-theme {
+            --color-bg: var(--color-bg-dark);
+            --color-surface: var(--color-surface-dark);
+            --color-primary: var(--color-primary-dark);
+            --color-text: var(--color-text-dark);
+            --color-border: var(--color-border-dark);
+            --shadow: var(--shadow-dark);
+            --shadow-window: var(--shadow-window-dark);
+            --color-start-menu: var(--color-start-menu-dark);
+            --color-taskbar: rgba(33, 33, 33, 0.7);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            cursor: default;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            height: 100vh;
+            width: 100vw;
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Utility classes */
+        .hidden { display: none !important; }
+
+        /* =========================================================================
+        | 2. BOOT SCREEN
+        ========================================================================= */
+        #boot-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--color-primary-light); /* Fixed color for boot */
+            color: white;
+            z-index: 9999;
+            transition: opacity 0.5s ease-out;
+            opacity: 1;
+        }
+
+        #boot-logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 50%;
+            position: relative;
+            animation: pulse 1.5s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { transform: scale(0.95); opacity: 0.8; }
+            to { transform: scale(1.05); opacity: 1; }
+        }
+
+        #boot-logo-inner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 40px;
+            font-weight: bold;
+            color: var(--color-primary-light);
+        }
+
+        #boot-progress {
+            width: 300px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        #boot-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: white;
+            transition: width 0.1s linear;
+        }
+
+        /* =========================================================================
+        | 3. DESKTOP
+        ========================================================================= */
+        #desktop {
+            position: relative;
+            width: 100%;
+            height: calc(100% - var(--taskbar-height));
+            overflow: hidden;
+            background: linear-gradient(135deg, #0078d4 0%, #00bfff 100%);
+            backdrop-filter: blur(5px);
+            transition: filter 0.3s;
+        }
+
+        .desktop-icon {
+            position: absolute;
+            width: 72px;
+            height: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 5px;
+            margin: 5px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            transition: background 0.1s;
+            color: var(--color-text-dark); /* Keep text light for contrast on the blue background */
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            font-size: 12px;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .desktop-icon:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .desktop-icon.selected {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .desktop-icon-svg {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 5px;
+            fill: white;
+            stroke: white;
+            stroke-width: 0;
+        }
+
+        .desktop-icon-label {
+            word-break: break-all;
+        }
+
+        /* Particle effect for background (LIGHT: only for visual) */
+        #particle-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            animation: moveParticle 10s infinite alternate ease-in-out;
+            opacity: 0;
+        }
+
+        @keyframes moveParticle {
+            0% { transform: translate(0, 0); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translate(var(--p-x), var(--p-y)); opacity: 0; }
+        }
+
+
+        /* =========================================================================
+        | 4. TASKBAR
+        ========================================================================= */
+        #taskbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: var(--taskbar-height);
+            background: var(--color-taskbar);
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 5px;
+            z-index: 1000;
+        }
+
+        .taskbar-section {
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+
+        .taskbar-button {
+            height: 100%;
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.1s;
+            color: var(--color-text);
+            font-weight: 500;
+        }
+
+        .taskbar-button:hover, .taskbar-button.active {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .dark-theme .taskbar-button:hover, .dark-theme .taskbar-button.active {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        #start-button {
+            width: 48px;
+            font-size: 20px;
+            padding: 0;
+        }
+
+        #taskbar-clock {
+            padding: 0 10px;
+            font-size: 12px;
+            line-height: 1.2;
+            text-align: right;
+        }
+
+        #taskbar-clock div {
+            padding: 2px 0;
+        }
+
+        .taskbar-app-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .taskbar-app-icon.active {
+            box-shadow: inset 0 -3px 0 var(--color-primary);
+        }
+
+        /* =========================================================================
+        | 5. START MENU
+        ========================================================================= */
+        #start-menu {
+            position: absolute;
+            bottom: var(--taskbar-height);
+            left: 5px;
+            width: 400px;
+            height: 450px;
+            background: var(--color-start-menu);
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow-window);
+            border-radius: 8px 8px 0 0;
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            transition: transform 0.2s, opacity 0.2s;
+            transform-origin: bottom left;
+            transform: scale(0.9) translateY(10px);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        #start-menu.open {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        #start-menu-sidebar {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 10px 0;
+            border-radius: 8px 0 0 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #start-menu-profile {
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        #start-menu-profile-icon {
+            width: 40px;
+            height: 40px;
+            background: #ccc;
+            border-radius: 50%;
+            margin: 0 auto 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--color-surface);
+        }
+
+        .start-menu-link {
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .start-menu-link:hover {
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        #start-menu-grid {
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        .start-menu-app-tile {
+            height: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.1s;
+            padding: 5px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .start-menu-app-tile:hover {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .start-menu-app-tile:hover .icon-svg {
+            fill: white;
+        }
+
+        /* =========================================================================
+        | 6. WINDOW MANAGER
+        ========================================================================= */
+        .window {
+            position: absolute;
+            min-width: 250px;
+            min-height: 150px;
+            background: var(--color-surface);
+            border: var(--window-border-size) solid var(--color-border);
+            box-shadow: var(--shadow-window);
+            border-radius: 6px;
+            overflow: hidden;
+            z-index: 100;
+            transform-origin: top left;
+            transition: transform 0.2s ease-out, opacity 0.2s ease-out, top 0.1s, left 0.1s;
+        }
+
+        .window.opening {
+            transform: scale(0.9);
+            opacity: 0;
+        }
+
+        .window.closing {
+            transform: scale(0.9);
+            opacity: 0;
+        }
+
+        .window.minimized {
+            transform: scale(0.5) translateY(100vh);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .window.focused {
+            border-color: var(--color-primary);
+        }
+
+        .window-header {
+            height: 32px;
+            background: var(--color-surface);
+            border-bottom: var(--window-border-size) solid var(--color-border);
+            padding: 0 5px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: move;
+        }
+
+        .window.focused .window-header {
+            background: var(--color-primary);
+            color: white;
+            border-bottom-color: var(--color-primary);
+        }
+
+        .window-title {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            flex-grow: 1;
+            padding: 0 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .window-controls {
+            display: flex;
+            height: 100%;
+        }
+
+        .window-control-btn {
+            width: 46px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .window-control-btn:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .window.focused .window-control-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .window-control-btn.close-btn:hover {
+            background: #e81123;
+            color: white;
+        }
+
+        .window-content {
+            height: calc(100% - 32px);
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            padding: 1px; /* To prevent border overflow */
+        }
+
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            right: 0;
+            bottom: 0;
+            cursor: nwse-resize;
+            z-index: 1; /* Above content */
+        }
+
+        .window.maximized {
+            width: 100vw !important;
+            height: calc(100vh - var(--taskbar-height)) !important;
+            top: 0 !important;
+            left: 0 !important;
+            border-radius: 0;
+            border: none;
+            box-shadow: none;
+        }
+
+        /* =========================================================================
+        | 7. APPLICATION STYLES (Explorer, Browser, Notepad, Settings)
+        ========================================================================= */
+
+        /* App Containers */
+        .app-content {
+            flex-grow: 1;
+            display: flex;
+            min-height: 0; /* Important for flex child in flex container */
+        }
+
+        /* Explorer */
+        .explorer-sidebar {
+            width: 200px;
+            min-width: 150px;
+            background: var(--color-bg);
+            border-right: var(--window-border-size) solid var(--color-border);
+            padding: 10px 0;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .explorer-main {
+            flex-grow: 1;
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .folder-item, .file-item {
+            padding: 5px 10px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .folder-item:hover, .file-item:hover, .fs-item.selected {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .folder-item > .icon-svg, .file-item > .icon-svg {
+            margin-right: 5px;
+            flex-shrink: 0;
+        }
+
+        .folder-tree-item {
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .folder-tree-item.current-folder {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Browser */
+        .browser-toolbar {
+            display: flex;
+            padding: 5px;
+            border-bottom: var(--window-border-size) solid var(--color-border);
+            flex-shrink: 0;
+        }
+
+        .browser-toolbar input {
+            flex-grow: 1;
+            padding: 5px 10px;
+            border: var(--window-border-size) solid var(--color-border);
+            border-radius: 4px;
+            margin-right: 5px;
+            background: var(--color-surface);
+            color: var(--color-text);
+        }
+
+        .browser-page {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            font-size: 14px;
+        }
+
+        .browser-page h2 { color: var(--color-primary); }
+        .browser-page a { color: var(--color-primary); text-decoration: none; cursor: pointer; }
+        .browser-page a:hover { text-decoration: underline; }
+
+        /* Notepad */
+        #notepad-textarea {
+            width: 100%;
+            height: 100%;
+            padding: 10px;
+            border: none;
+            resize: none;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            background: var(--color-surface);
+            color: var(--color-text);
+            outline: none;
+        }
+
+        /* Settings */
+        .settings-grid {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: var(--window-border-size) solid var(--color-border);
+        }
+
+        .setting-item:last-child { border-bottom: none; }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: 0.4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider { background-color: var(--color-primary); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* =========================================================================
+        | 8. CONTEXT MENU & NOTIFICATIONS
+        ========================================================================= */
+        .context-menu {
+            position: absolute;
+            background: var(--color-surface);
+            border: var(--window-border-size) solid var(--color-border);
+            box-shadow: var(--shadow);
+            border-radius: 4px;
+            padding: 5px 0;
+            z-index: 2000;
+            min-width: 150px;
+            display: none;
+            font-size: 13px;
+        }
+
+        .context-menu-item {
+            padding: 6px 15px;
+            cursor: pointer;
+            transition: background 0.1s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .context-menu-item:hover {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .context-menu-separator {
+            height: var(--window-border-size);
+            background: var(--color-border);
+            margin: 5px 0;
+        }
+
+        .context-menu-submenu:after {
+            content: '►';
+            font-size: 10px;
+            margin-left: 10px;
+        }
+
+        #notifications {
+            position: fixed;
+            bottom: var(--taskbar-height);
+            right: 10px;
+            width: 300px;
+            z-index: 1500;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: var(--shadow);
+            opacity: 0;
+            transform: translateX(100%);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* =========================================================================
+        | 9. SVG ICONS (Inline)
+        ========================================================================= */
+        .icon-svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor; /* Use text color */
+            flex-shrink: 0;
+        }
+
+        .icon-lg {
+            width: 32px;
+            height: 32px;
+        }
+
+        /* Generic icons */
+        .svg-folder {
+            fill: #ffd400;
+            stroke: #ff9900;
+            stroke-width: 0.5;
+        }
+
+        .svg-file-txt {
+            fill: #c5e9ff;
+            stroke: #0078d4;
+            stroke-width: 0.5;
+        }
+
+        .svg-trash { fill: #f04747; }
+        .svg-settings { fill: #aaaaaa; }
+        .svg-browser { fill: #4CAF50; }
+        .svg-notepad { fill: #b0bec5; }
+        .svg-user { fill: #0078d4; }
+        .svg-docs { fill: #ff9900; }
+        .svg-power { fill: #f04747; }
+        .svg-refresh { fill: #0078d4; }
+        .svg-create { fill: #0078d4; }
+
+        /* Minimize/Maximize/Close Icons (Simple shapes) */
+        .svg-minimize { background: none; border-bottom: 2px solid currentColor; width: 10px; height: 2px; margin-bottom: 6px; }
+        .svg-maximize { background: none; border: 2px solid currentColor; width: 10px; height: 10px; }
+        .svg-close {
+            position: relative; width: 12px; height: 12px;
+            transform: rotate(45deg);
+        }
+        .svg-close:before, .svg-close:after {
+            content: ''; position: absolute; background: currentColor;
+            top: 5px; left: 0; width: 100%; height: 2px;
+        }
+        .svg-close:after {
+            transform: rotate(90deg);
+        }
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <canvas id="game" width="960" height="640"></canvas>
-    <div class="hud">
-      <div class="hint">WASD / стрелки — движение · E — сесть/выйти · Space — стрельба · 1/2 — выбор оружия · P — Пауза</div>
-      <div class="btn" id="fps">FPS: 0</div>
+
+    <div id="boot-screen">
+        <div id="boot-logo"><span id="boot-logo-inner">AI</span></div>
+        <h2>AI-Windows Light</h2>
+        <div id="boot-progress"><div id="boot-progress-bar"></div></div>
     </div>
-  </div>  <div class="top-hud">
-    <div>Деньги: <span class="money" id="money">0</span>₴ <span class="wanted" id="wanted"></span></div>
-    <div class="weapons">Оружие: <span id="weaponName">Пистолет</span> · Патроны: <span id="ammo">∞</span></div>
-  </div>  <!-- Mobile touch controls -->  <div class="touch-controls">
-    <div class="left-joy" id="leftJoy"></div>
-    <div class="right-buttons">
-      <div class="btn-touch" id="btnShoot">🔫</div>
-      <div style="display:flex;gap:8px"><div class="btn-touch" id="btnEnter">E</div><div class="btn-touch" id="btnSwitch">1/2</div></div>
+
+    <div id="desktop" class="hidden">
+        <div id="particle-layer"></div>
+
+        <div class="desktop-icon" id="icon-explorer" data-app="explorer" style="top: 20px; left: 20px;">
+            <svg class="desktop-icon-svg svg-folder">
+                <path d="M10 4L12 6H28V28H4V4H10z"/>
+            </svg>
+            <span class="desktop-icon-label">Explorer</span>
+        </div>
+
+        <div class="desktop-icon" id="icon-browser" data-app="browser" style="top: 100px; left: 20px;">
+            <svg class="desktop-icon-svg svg-browser" viewBox="0 0 32 32">
+                <circle cx="16" cy="16" r="14" fill="#4CAF50"/>
+                <circle cx="16" cy="16" r="10" fill="white"/>
+                <path d="M16 6a10 10 0 010 20z" fill="#4CAF50"/>
+                <path d="M6 16h20M16 2v2M16 28v2" stroke="white" stroke-width="2"/>
+            </svg>
+            <span class="desktop-icon-label">Browser</span>
+        </div>
+
+        <div class="desktop-icon" id="icon-notepad" data-app="notepad" style="top: 180px; left: 20px;">
+            <svg class="desktop-icon-svg svg-notepad" viewBox="0 0 32 32">
+                <rect x="6" y="4" width="20" height="24" rx="2" fill="#fff"/>
+                <rect x="10" y="8" width="12" height="2" fill="#ccc"/>
+                <rect x="10" y="12" width="12" height="2" fill="#ccc"/>
+                <rect x="10" y="16" width="8" height="2" fill="#ccc"/>
+                <path d="M6 4H26V28H6z" stroke="#607d8b" stroke-width="1.5" fill="none"/>
+            </svg>
+            <span class="desktop-icon-label">Notepad</span>
+        </div>
+
+        <div class="desktop-icon" id="icon-settings" data-app="settings" style="top: 260px; left: 20px;">
+            <svg class="desktop-icon-svg svg-settings" viewBox="0 0 32 32">
+                <path d="M19.8 4.2l-3.3-3.3a1 1 0 00-1 0L12.2 4.2a1 1 0 00-.7.7l-2.2 3.8a1 1 0 00-.5.6l-4.5 1.5a1 1 0 00-.6.5L.2 14.7a1 1 0 000 2.6l4.5 3.3a1 1 0 00.6.5l4.5 1.5a1 1 0 00.5.6l2.2 3.8a1 1 0 00.7.7l3.3 3.3a1 1 0 001 0l3.3-3.3a1 1 0 00.7-.7l2.2-3.8a1 1 0 00.5-.6l4.5-1.5a1 1 0 00.6-.5l4.5-3.3a1 1 0 000-2.6l-4.5-3.3a1 1 0 00-.6-.5l-4.5-1.5a1 1 0 00-.5-.6l-2.2-3.8a1 1 0 00-.7-.7zM16 22a6 6 0 100-12 6 6 0 000 12z" fill="currentColor"/>
+            </svg>
+            <span class="desktop-icon-label">Settings</span>
+        </div>
+
+        <div class="desktop-icon" id="icon-recycle" data-app="recycle" style="top: 340px; left: 20px;">
+            <svg class="desktop-icon-svg svg-trash" viewBox="0 0 32 32">
+                <path d="M25 8h-4a1 1 0 00-1-1h-6a1 1 0 00-1 1h-4a1 1 0 00-1 1v2h18V9a1 1 0 00-1-1zM26 12H6v14a2 2 0 002 2h16a2 2 0 002-2V12zm-8 4v8h-2v-8h2zm-4 0v8h-2v-8h2z"/>
+            </svg>
+            <span class="desktop-icon-label">Recycle Bin</span>
+        </div>
+
     </div>
-  </div><script>
-/* Extended demo JS */
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
 
-// utils
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const rand=(a,b)=>a+Math.random()*(b-a);
-const nowMs=()=>performance.now();
+    <div id="taskbar" class="hidden">
+        <div class="taskbar-section">
+            <div id="start-button" class="taskbar-button">AI</div>
+            <div class="taskbar-app-icon" data-app="explorer" id="taskbar-app-explorer">
+                <svg class="icon-svg svg-folder"><path d="M10 4L12 6H28V28H4V4H10z"/></svg>
+            </div>
+            <div class="taskbar-app-icon" data-app="browser" id="taskbar-app-browser">
+                <svg class="icon-svg svg-browser" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="currentColor"/><circle cx="16" cy="16" r="10" fill="white"/><path d="M16 6a10 10 0 010 20z" fill="currentColor"/><path d="M6 16h20" stroke="white" stroke-width="2"/></svg>
+            </div>
+            <div class="taskbar-app-icon" data-app="notepad" id="taskbar-app-notepad">
+                <svg class="icon-svg svg-notepad" viewBox="0 0 32 32"><rect x="6" y="4" width="20" height="24" rx="2" fill="#fff"/><path d="M6 4H26V28H6z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            </div>
+            </div>
+        <div class="taskbar-section">
+            <div id="taskbar-clock"></div>
+        </div>
+    </div>
 
-// Audio simple helper
-const AudioSystem = (()=>{
-  const ctx = new (window.AudioContext||window.webkitAudioContext)();
-  function beep(freq=440, time=0.08, type='sine', vol=0.12){
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = type; o.frequency.value = freq; g.gain.value = vol;
-    o.connect(g); g.connect(ctx.destination);
-    o.start(); o.stop(ctx.currentTime + time);
-  }
-  function sampleShoot(){ beep(900,0.06,'square',0.06); }
-  function samplePickup(){ beep(1200,0.06,'sine',0.06); }
-  function sampleEnter(){ beep(400,0.08,'sawtooth',0.06); }
-  function unlock(){ if(ctx.state==='suspended') ctx.resume(); }
-  return {sampleShoot,samplePickup,sampleEnter,unlock};
-})();
+    <div id="start-menu">
+        <div id="start-menu-sidebar">
+            <div id="start-menu-profile">
+                <div id="start-menu-profile-icon">👤</div>
+                <div>AI_User</div>
+            </div>
+            <div class="start-menu-links">
+                <div class="start-menu-link" data-action="open-explorer-docs">
+                    <svg class="icon-svg svg-docs" viewBox="0 0 32 32"><path d="M26 4H10a2 2 0 00-2 2v20a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zM18 10h6M18 14h6M10 10h4M10 14h4"/></svg>
+                    <span style="margin-left: 10px;">Documents</span>
+                </div>
+                <div class="start-menu-link" data-action="open-app-settings">
+                    <svg class="icon-svg svg-settings" viewBox="0 0 32 32"><path d="M16 6.8l-1.9-3.3a1 1 0 00-1 0L12.1 6.8a1 1 0 00-.7.7l-2 3.5a1 1 0 00-.5.6l-4.1 1.4a1 1 0 00-.6.5L2 15.3a1 1 0 000 1.4l2.2 1.6a1 1 0 00.6.5l4.1 1.4a1 1 0 00.5.6l2 3.5a1 1 0 00.7.7l1.9 3.3a1 1 0 001 0l1.9-3.3a1 1 0 00.7-.7l2-3.5a1 1 0 00.5-.6l4.1-1.4a1 1 0 00.6-.5l2.2-1.6a1 1 0 000-1.4l-2.2-1.6a1 1 0 00-.6-.5l-4.1-1.4a1 1 0 00-.5-.6l-2-3.5a1 1 0 00-.7-.7zM16 20a4 4 0 100-8 4 4 0 000 8z" fill="currentColor"/></svg>
+                    <span style="margin-left: 10px;">Settings</span>
+                </div>
+            </div>
+            <div class="start-menu-link" data-action="shutdown">
+                <svg class="icon-svg svg-power" viewBox="0 0 32 32"><path d="M16 2a14 14 0 100 28 14 14 0 000-28zm0 2a12 12 0 110 24 12 12 0 010-24zm-1 5h2v10h-2z" fill="currentColor"/></svg>
+                <span style="margin-left: 10px;">Power</span>
+            </div>
+        </div>
+        <div id="start-menu-grid">
+            <div class="start-menu-app-tile" data-app="explorer">
+                <svg class="icon-svg icon-lg svg-folder"><path d="M10 4L12 6H28V28H4V4H10z"/></svg>
+                Explorer
+            </div>
+            <div class="start-menu-app-tile" data-app="browser">
+                <svg class="icon-svg icon-lg svg-browser" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="currentColor"/><circle cx="16" cy="16" r="10" fill="white"/><path d="M16 6a10 10 0 010 20z" fill="currentColor"/><path d="M6 16h20" stroke="white" stroke-width="2"/></svg>
+                Browser
+            </div>
+            <div class="start-menu-app-tile" data-app="notepad">
+                <svg class="icon-svg icon-lg svg-notepad" viewBox="0 0 32 32"><rect x="6" y="4" width="20" height="24" rx="2" fill="#fff"/><path d="M6 4H26V28H6z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                Notepad
+            </div>
+            <div class="start-menu-app-tile" data-app="settings">
+                <svg class="icon-svg icon-lg svg-settings" viewBox="0 0 32 32"><path d="M16 6.8l-1.9-3.3a1 1 0 00-1 0L12.1 6.8a1 1 0 00-.7.7l-2 3.5a1 1 0 00-.5.6l-4.1 1.4a1 1 0 00-.6.5L2 15.3a1 1 0 000 1.4l2.2 1.6a1 1 0 00.6.5l4.1 1.4a1 1 0 00.5.6l2 3.5a1 1 0 00.7.7l1.9 3.3a1 1 0 001 0l1.9-3.3a1 1 0 00.7-.7l2-3.5a1 1 0 00.5-.6l4.1-1.4a1 1 0 00.6-.5l2.2-1.6a1 1 0 000-1.4l-2.2-1.6a1 1 0 00-.6-.5l-4.1-1.4a1 1 0 00-.5-.6l-2-3.5a1 1 0 00-.7-.7zM16 20a4 4 0 100-8 4 4 0 000 8z" fill="currentColor"/></svg>
+                Settings
+            </div>
+            <div class="start-menu-app-tile" data-app="recycle">
+                <svg class="icon-svg icon-lg svg-trash" viewBox="0 0 32 32"><path d="M25 8h-4a1 1 0 00-1-1h-6a1 1 0 00-1 1h-4a1 1 0 00-1 1v2h18V9a1 1 0 00-1-1zM26 12H6v14a2 2 0 002 2h16a2 2 0 002-2V12zm-8 4v8h-2v-8h2zm-4 0v8h-2v-8h2z"/></svg>
+                Recycle
+            </div>
+        </div>
+    </div>
 
-// Input
-const keys = {}; window.addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; if(e.key===' ') e.preventDefault(); AudioSystem.unlock(); });
-window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+    <div id="windows-container"></div>
 
-// touch controls state
-let touchState = {jx:0,jy:0,active:false,shoot:false,enter:false,switch:false};
-// build simple joystick element
-const leftJoy = document.getElementById('leftJoy');
-(function buildJoy(){
-  leftJoy.style.touchAction='none';
-  leftJoy.style.position='relative';
-  const base = document.createElement('div');
-  base.style.width='100%'; base.style.height='100%'; base.style.borderRadius='50%'; base.style.background='rgba(0,0,0,0)';
-  leftJoy.appendChild(base);
-  const knob = document.createElement('div');
-  knob.style.width='120px'; knob.style.height='120px'; knob.style.borderRadius='50%'; knob.style.position='absolute'; knob.style.left='20px'; knob.style.bottom='20px'; knob.style.background='rgba(255,255,255,0.08)'; knob.style.display='flex'; knob.style.alignItems='center'; knob.style.justifyContent='center'; knob.style.fontSize='22px'; knob.style.color='white'; leftJoy.appendChild(knob);
-  // touch handlers
-  let id=null, startX=0, startY=0, centerX=60, centerY=window.innerHeight*0.6 - 60; // approximate
-  function updateKnob(x,y){ const nx = clamp(x-startX,-60,60); const ny = clamp(y-startY,-60,60); knob.style.transform = `translate(${nx}px,${-ny}px)`; touchState.jx = nx/60; touchState.jy = ny/60; }
-  leftJoy.addEventListener('pointerdown', e=>{ id=e.pointerId; leftJoy.setPointerCapture(id); startX=e.clientX; startY=e.clientY; touchState.active=true; updateKnob(e.clientX,e.clientY); });
-  leftJoy.addEventListener('pointermove', e=>{ if(e.pointerId!==id) return; updateKnob(e.clientX,e.clientY); });
-  leftJoy.addEventListener('pointerup', e=>{ if(e.pointerId!==id) return; leftJoy.releasePointerCapture(id); id=null; touchState.active=false; touchState.jx=0; touchState.jy=0; knob.style.transform='translate(0px,0px)'; });
-})();
-// buttons
-const btnShoot = document.getElementById('btnShoot'); btnShoot.addEventListener('pointerdown',()=>{ touchState.shoot=true; AudioSystem.unlock(); }); btnShoot.addEventListener('pointerup',()=>{ touchState.shoot=false; });
-const btnEnter = document.getElementById('btnEnter'); btnEnter.addEventListener('click',()=>{ touchState.enter=true; setTimeout(()=>touchState.enter=false,100); });
-const btnSwitch = document.getElementById('btnSwitch'); btnSwitch.addEventListener('click',()=>{ touchState.switch=true; setTimeout(()=>touchState.switch=false,100); });
+    <div id="desktop-context-menu" class="context-menu">
+        <div class="context-menu-item" data-action="refresh-desktop">
+            <svg class="icon-svg svg-refresh" viewBox="0 0 32 32"><path d="M16 4C9.37 4 4 9.37 4 16h4c0-4.41 3.59-8 8-8s8 3.59 8 8-3.59 8-8 8c-2.45 0-4.66-1.12-6.12-2.88l2.12-2.12-8 0 0 8 2.5-2.5C7.94 25.12 11.66 28 16 28c6.63 0 12-5.37 12-12S22.63 4 16 4z" fill="currentColor"/></svg>
+            <span style="margin-left: 8px;">Refresh</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item context-menu-submenu">
+            <svg class="icon-svg svg-create" viewBox="0 0 32 32"><path d="M25 10H7a1 1 0 00-1 1v10a1 1 0 001 1h18a1 1 0 001-1V11a1 1 0 00-1-1zm-8 2v8h-2v-8h2zm4 0v8h-2v-8h2z" fill="currentColor"/></svg>
+            <span style="margin-left: 8px;">New</span>
+            <div class="context-menu submenu hidden">
+                <div class="context-menu-item" data-action="create-txt-file">Text Document</div>
+            </div>
+        </div>
+    </div>
 
-// Game state
-let lastTime = nowMs(); let paused=false;
-const fpsCounter = {frame:0,time:0,fps:0};
-let money = 0; const moneyEl = document.getElementById('money');
-let wantedLevel = 0; const wantedEl = document.getElementById('wanted');
+    <div id="file-context-menu" class="context-menu">
+        <div class="context-menu-item" data-action="file-rename">Rename</div>
+        <div class="context-menu-item" data-action="file-delete">Delete</div>
+    </div>
 
-// Map generation: procedural grid of blocks
-const TILE=48; const MAP_W = Math.ceil(W/TILE)+6; const MAP_H = Math.ceil(H/TILE)+6;
-let map = [];
-function genMap(){
-  map = [];
-  // create alternating roads by bands, with random small block obstacles
-  const blockSize = 4 + Math.floor(rand(1,4));
-  for(let y=0;y<MAP_H;y++){
-    map[y]=[];
-    for(let x=0;x<MAP_W;x++){
-      // roads every blockSize tiles
-      if(x%blockSize===0 || y%blockSize===0) map[y][x]=0; // road
-      else if(Math.random()<0.05) map[y][x]=2; // building corner
-      else map[y][x]=1; // grass/lot
-    }
-  }
-}
-genMap();
-function tileAt(px,py){ const tx=Math.floor(px/TILE), ty=Math.floor(py/TILE); if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return 2; return map[ty][tx]; }
-function isBlockedAt(x,y){ return tileAt(x,y)===2; }
+    <div id="notifications"></div>
 
-// Player
-const player = {x:W/2,y:H/2,r:14,speed:120,angle:0,inVehicle:null,health:100,weapon:0};
-const weapons = [ {name:'Пистолет', rate:200, bulletSpeed:420}, {name:'Дробовик', rate:700, bulletSpeed:320} ];
-let lastShotTime = 0;
+    <audio id="startup-sound">
+        <source src="data:audio/wav;base64,UklGRl9vT1JXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAAAJAFiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIEND" type="audio/wav">
+    </audio>
 
-// Vehicles
-const vehicles=[]; for(let i=0;i<7;i++){ vehicles.push({x:rand(100,W-100),y:rand(100,H-100),w:44,h:26,angle:rand(0,Math.PI*2),speed:0,maxSpeed:200,color:['#4cc9f0','#f72585','#ffd166'][i%3],owner: (Math.random()<0.6? 'npc':'private'),stolen:false,lock:false}); }
+    <script>
+        // Use a single global object to avoid namespace pollution
+        const AIWindowsLight = {};
 
-// NPCs
-const npcs=[]; for(let i=0;i<12;i++){ npcs.push({x:rand(50,W-50),y:rand(50,H-50),r:10,speed:30,dir:rand(0,Math.PI*2),alive:true}); }
+        // =========================================================================
+        // | 1. CORE UTILITIES (Utils)
+        // =========================================================================
+        AIWindowsLight.Utils = (() => {
+            let soundEnabled = true;
 
-// Bullets & pickups
-const bullets=[]; const pickups=[];
+            /**
+             * Safely get/set data from localStorage.
+             * @param {string} key - The key for localStorage.
+             * @param {*} value - The value to set (optional).
+             * @returns {*} The retrieved value, or undefined if setting.
+             */
+            const storage = (key, value) => {
+                const prefixedKey = `AILightOS_${key}`;
+                try {
+                    if (value !== undefined) {
+                        localStorage.setItem(prefixedKey, JSON.stringify(value));
+                        return;
+                    }
+                    const item = localStorage.getItem(prefixedKey);
+                    return item ? JSON.parse(item) : null;
+                } catch (e) {
+                    console.error(`LocalStorage error for key ${key}:`, e);
+                    return null;
+                }
+            };
 
-// Collisions
-function collideMapCircle(obj){ const left=obj.x-obj.r, right=obj.x+obj.r, top=obj.y-obj.r, bottom=obj.y+obj.r; const cells=[]; for(let yy=Math.floor(top/TILE); yy<=Math.floor(bottom/TILE); yy++){ for(let xx=Math.floor(left/TILE); xx<=Math.floor(right/TILE); xx++){ if(xx<0||yy<0||xx>=MAP_W||yy>=MAP_H) continue; if(map[yy][xx]===2) cells.push({x:xx*TILE+TILE/2,y:yy*TILE+TILE/2}); } } for(const c of cells){ const dx=obj.x-c.x, dy=obj.y-c.y, d=Math.hypot(dx,dy)||0.001; const overlap = obj.r + TILE/2 - d; if(overlap>0){ obj.x += (dx/d)*overlap; obj.y += (dy/d)*overlap; } } }
+            /**
+             * Play a sound element.
+             * @param {HTMLElement} audioEl - The audio element.
+             */
+            const playSound = (audioEl) => {
+                if (soundEnabled && audioEl) {
+                    audioEl.currentTime = 0;
+                    audioEl.play().catch(e => console.log('Sound play blocked:', e));
+                }
+            };
 
-// Update
-function updatePlayer(dt){
-  // movement input: keyboard or touch
-  let mvx=0,mvy=0;
-  if(keys['arrowup']||keys['w']) mvy -= 1;
-  if(keys['arrowdown']||keys['s']) mvy += 1;
-  if(keys['arrowleft']||keys['a']) mvx -= 1;
-  if(keys['arrowright']||keys['d']) mvx += 1;
-  if(touchState.active){ mvx += touchState.jx; mvy += -touchState.jy; }
-  const len = Math.hypot(mvx,mvy);
-  if(len>0){ mvx/=len; mvy/=len; player.x += mvx * player.speed * dt; player.y += mvy * player.speed * dt; player.angle = Math.atan2(mvy,mvx); }
-  collideMapCircle(player);
+            /**
+             * Simple Toast Notification System.
+             * @param {string} message - Message to display.
+             * @param {number} duration - Display duration in ms.
+             */
+            const showToast = (message, duration = 3000) => {
+                const container = document.getElementById('notifications');
+                const toast = document.createElement('div');
+                toast.className = 'toast';
+                toast.textContent = message;
+                container.appendChild(toast);
 
-  // enter/exit vehicle
-  if(keys['e']||touchState.enter){
-    if(player.inVehicle==null){
-      for(const v of vehicles){ if(Math.hypot(player.x-v.x,player.y-v.y) < 48 && !v.lock){ // can enter
-          player.inVehicle=v; v.driver='player'; v.stolen = (v.owner!=='player'); if(v.stolen){ increaseWanted(1); }
-          AudioSystem.sampleEnter(); break;
-      } }
-    } else { // exit
-      player.inVehicle.driver=null; player.inVehicle=null; // push out
-      player.x += Math.cos(player.angle+Math.PI/2)*(30); player.y += Math.sin(player.angle+Math.PI/2)*(30);
-    }
-    touchState.enter=false; keys['e']=false;
-  }
+                // Show
+                requestAnimationFrame(() => toast.classList.add('show'));
 
-  // weapon switch
-  if(keys['1']){ player.weapon=0; keys['1']=false; }
-  if(keys['2']){ player.weapon=1; keys['2']=false; }
-  if(touchState.switch){ player.weapon = (player.weapon+1)%weapons.length; touchState.switch=false; }
-  document.getElementById('weaponName').textContent = weapons[player.weapon].name;
+                // Hide and remove
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                    setTimeout(() => container.removeChild(toast), 300);
+                }, duration);
+            };
 
-  // shooting
-  const shootPressed = keys[' '] || touchState.shoot;
-  const w = weapons[player.weapon];
-  if(shootPressed && nowMs() - lastShotTime > w.rate){
-    lastShotTime = nowMs();
-    const angle = player.inVehicle? player.inVehicle.angle : player.angle;
-    const bx = (player.inVehicle? player.inVehicle.x : player.x) + Math.cos(angle) * 20;
-    const by = (player.inVehicle? player.inVehicle.y : player.y) + Math.sin(angle) * 20;
-    bullets.push({x:bx,y:by,vx:Math.cos(angle)*w.bulletSpeed,vy:Math.sin(angle)*w.bulletSpeed,life:2,owner:'player'});
-    AudioSystem.sampleShoot();
-  }
-}
+            /**
+             * Simple drag and drop implementation.
+             * @param {HTMLElement} element - The element to drag.
+             * @param {HTMLElement} handle - The handle element (optional).
+             * @param {Function} onDragEnd - Callback after drag ends.
+             */
+            const makeDraggable = (element, handle = element, onDragEnd = () => {}) => {
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 
-function updateVehicles(dt){
-  for(const v of vehicles){
-    if(v.driver=='player'){
-      // controlled
-      if(keys['arrowup']||keys['w']||touchState.active && Math.hypot(touchState.jx,touchState.jy)>0.2){ v.speed += 300*dt; }
-      else v.speed -= 200*dt;
-      if(keys['arrowleft']||keys['a']) v.angle -= 2.2*dt * (1 + Math.abs(v.speed)/200);
-      if(keys['arrowright']||keys['d']) v.angle += 2.2*dt * (1 + Math.abs(v.speed)/200);
-      v.speed = clamp(v.speed, -v.maxSpeed*0.4, v.maxSpeed);
-      v.speed *= (1 - clamp(0.6*dt,0,0.6));
-      v.x += Math.cos(v.angle) * v.speed * dt; v.y += Math.sin(v.angle)*v.speed*dt;
-      // collide
-      collideMapCircle({x:v.x,y:v.y,r:Math.max(v.w,v.h)});
-      // sync player
-      player.x = v.x; player.y = v.y;
-    } else {
-      // simple idle AI
-      v.x += Math.cos(v.angle) * (v.speed||10) * dt; v.y += Math.sin(v.angle) * (v.speed||10) * dt;
-      if(isBlockedAt(v.x,v.y) || v.x<20||v.y<20||v.x>W-20||v.y>H-20) v.angle += Math.PI*0.6;
-    }
-  }
-}
+                const dragMouseDown = (e) => {
+                    e = e || window.event;
+                    e.preventDefault();
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
+                }
 
-function updateNpcs(dt){
-  for(const n of npcs){ if(!n.alive) continue; n.x += Math.cos(n.dir)*n.speed*dt; n.y += Math.sin(n.dir)*n.speed*dt; if(Math.random()<0.01) n.dir += rand(-1,1); if(isBlockedAt(n.x,n.y)||n.x<10||n.y<10||n.x>W-10||n.y>H-10) n.dir += Math.PI*0.5; collideMapCircle({x:n.x,y:n.y,r:n.r}); }
-}
+                const elementDrag = (e) => {
+                    e = e || window.event;
+                    e.preventDefault();
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
 
-function updateBullets(dt){
-  for(let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt; if(isBlockedAt(b.x,b.y)){ bullets.splice(i,1); continue; } if(b.life<=0){ bullets.splice(i,1); continue; }
-    // hit npcs
-    for(const n of npcs){ if(n.alive && Math.hypot(n.x-b.x,n.y-b.y) < n.r+3){ n.alive=false; bullets.splice(i,1); spawnMoney(n.x,n.y); increaseWanted(1); break; } }
-    // hit vehicles (minor effect)
-    for(const v of vehicles){ if(Math.hypot(v.x-b.x,v.y-b.y) < Math.max(v.w,v.h)+3){ bullets.splice(i,1); break; } }
-  }
-}
+                    // Calculate new position
+                    let newTop = element.offsetTop - pos2;
+                    let newLeft = element.offsetLeft - pos1;
 
-function spawnMoney(x,y){ const amount = Math.round(rand(5,40)); pickups.push({x,y,amount,life:6}); AudioSystem.samplePickup(); }
+                    // Boundary checks (prevent dragging off-screen/behind taskbar)
+                    const maxTop = window.innerHeight - AIWindowsLight.Settings.TASKBAR_HEIGHT - element.offsetHeight;
+                    newTop = Math.max(0, Math.min(newTop, maxTop));
+                    newLeft = Math.max(0, newLeft); // Allow off-screen to the right, but not too much
 
-function updatePickups(dt){ for(let i=pickups.length-1;i>=0;i--){ const p=pickups[i]; p.life-=dt; if(Math.hypot(player.x-p.x,player.y-p.y) < 24){ money += p.amount; moneyEl.textContent = money; pickups.splice(i,1); continue; } if(p.life<=0) pickups.splice(i,1); } }
+                    element.style.top = newTop + 'px';
+                    element.style.left = newLeft + 'px';
+                }
 
-function increaseWanted(v){ wantedLevel = clamp(wantedLevel+v,0,5); updateWantedUI(); }
-function decreaseWanted(v){ wantedLevel = clamp(wantedLevel-v,0,5); updateWantedUI(); }
-function updateWantedUI(){ wantedEl.innerHTML = 'Розыск: ' + '★'.repeat(wantedLevel) + '☆'.repeat(5-wantedLevel); }
-updateWantedUI();
+                const closeDragElement = () => {
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                    onDragEnd(element.id, element.offsetLeft, element.offsetTop);
+                }
 
-// Render helpers for sprites (simple)
-function drawCar(v){ ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle); ctx.fillStyle=v.color; ctx.fillRect(-v.w/2,-v.h/2,v.w,v.h); // windows
- ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(2,-v.h/4,v.w/3,v.h/2); // stolen marker
- if(v.stolen){ ctx.fillStyle='rgba(255,0,0,0.9)'; ctx.fillRect(-v.w/2, -v.h/2 -6, 6, 6); }
- ctx.restore(); }
-function drawNpc(n){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2); ctx.fillStyle=n.alive? '#c084fc':'#444'; ctx.fill(); }
-function drawPlayer(){ if(player.inVehicle==null){ ctx.save(); ctx.translate(player.x,player.y); ctx.rotate(player.angle); ctx.beginPath(); ctx.arc(0,0,player.r,0,Math.PI*2); ctx.fillStyle='#ffd166'; ctx.fill(); ctx.fillStyle='#ef476f'; ctx.fillRect(player.r-6,-4,8,8); ctx.restore(); } }
+                handle.onmousedown = dragMouseDown;
+            };
 
-// draw map
-function drawMap(){ for(let y=0;y<MAP_H;y++){ for(let x=0;x<MAP_W;x++){ const t=map[y][x]; const px=x*TILE, py=y*TILE; if(t===0){ ctx.fillStyle='#4b5563'; ctx.fillRect(px,py,TILE,TILE); ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fillRect(px+TILE/2-2,py+6,4,TILE-12); } else if(t===1){ ctx.fillStyle='#2b6b2b'; ctx.fillRect(px,py,TILE,TILE); } else { ctx.fillStyle='#374151'; ctx.fillRect(px,py,TILE,TILE); ctx.fillStyle='#111827'; ctx.fillRect(px+6,py+6,TILE-12,TILE-12); } } } }
+            /**
+             * Sets the theme (light/dark).
+             * @param {string} themeName - 'light' or 'dark'.
+             */
+            const setTheme = (themeName) => {
+                const body = document.body;
+                body.classList.remove('light-theme', 'dark-theme');
+                if (themeName === 'dark') {
+                    body.classList.add('dark-theme');
+                } else {
+                    body.classList.remove('dark-theme');
+                }
+                storage('theme', themeName);
+            };
 
-// Main loop
-function loop(t){ const dt = Math.min((t-lastTime)/1000, 0.05); lastTime = t; if(!paused){ updatePlayer(dt); updateNpcs(dt); updateVehicles(dt); updateBullets(dt); updatePickups(dt); }
-  // draw
-  ctx.clearRect(0,0,W,H); drawMap(); for(const v of vehicles) drawCar(v); for(const p of pickups){ ctx.fillStyle='#ffdd57'; ctx.beginPath(); ctx.arc(p.x,p.y,8,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#000'; ctx.fillText(p.amount, p.x-6, p.y+4); }
-  for(const b of bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fillStyle='#ffb4a2'; ctx.fill(); }
-  for(const n of npcs) drawNpc(n); drawPlayer(); // HUD crosshair
-  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.moveTo(W/2-8,H/2); ctx.lineTo(W/2+8,H/2); ctx.moveTo(W/2,H/2-8); ctx.lineTo(W/2,H/2+8); ctx.stroke();
+            /**
+             * Sets the sound state.
+             * @param {boolean} state - true/false.
+             */
+            const setSoundState = (state) => {
+                soundEnabled = state;
+                storage('soundEnabled', state);
+            };
 
-  // fps
-  fpsCounter.frame++; fpsCounter.time += dt; if(fpsCounter.time>0.5){ fpsCounter.fps = Math.round(fpsCounter.frame / fpsCounter.time); fpsCounter.frame=0; fpsCounter.time=0; document.getElementById('fps').textContent = 'FPS: '+fpsCounter.fps; }
+            return {
+                storage,
+                playSound,
+                showToast,
+                makeDraggable,
+                setTheme,
+                setSoundState
+            };
+        })();
 
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
+        // =========================================================================
+        // | 2. SETTINGS & INITIAL STATE (Settings)
+        // =========================================================================
+        AIWindowsLight.Settings = (() => {
+            const TASKBAR_HEIGHT = 48;
+            const INITIAL_APPS = ['explorer', 'browser', 'notepad', 'settings', 'recycle'];
+            const savedSettings = AIWindowsLight.Utils.storage('settings') || {};
 
-// Pause toggle
-window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='p') paused=!paused; });
+            const INITIAL_ICON_POSITIONS = savedSettings.iconPositions || {
+                'icon-explorer': { top: 20, left: 20 },
+                'icon-browser': { top: 100, left: 20 },
+                'icon-notepad': { top: 180, left: 20 },
+                'icon-settings': { top: 260, left: 20 },
+                'icon-recycle': { top: 340, left: 20 },
+            };
 
-// touch -> feed keyboard-like for continuous actions
-setInterval(()=>{ // handle touch shoot mapping to space key while active
-  if(touchState.shoot) keys[' ']=true; else keys[' ']=false;
-}, 50);
+            const THEME = savedSettings.theme || 'light';
+            const SOUND_ENABLED = savedSettings.soundEnabled !== undefined ? savedSettings.soundEnabled : true;
 
-// Helpful: regenerate map and respawn on demand
-window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='r'){ genMap(); } });
+            /**
+             * Save current icon positions to localStorage.
+             * @param {string} id - The ID of the icon.
+             * @param {number} left - Left position.
+             * @param {number} top - Top position.
+             */
+            const saveIconPosition = (id, left, top) => {
+                INITIAL_ICON_POSITIONS[id] = { left: left, top: top };
+                AIWindowsLight.Utils.storage('settings', {
+                    iconPositions: INITIAL_ICON_POSITIONS,
+                    theme: THEME,
+                    soundEnabled: SOUND_ENABLED
+                });
+            };
 
-// initial UI
-document.getElementById('ammo').textContent = '∞';
+            return {
+                TASKBAR_HEIGHT,
+                INITIAL_APPS,
+                INITIAL_ICON_POSITIONS,
+                THEME,
+                SOUND_ENABLED,
+                saveIconPosition
+            };
+        })();
 
-</script></body>
+        // =========================================================================
+        // | 3. FILE SYSTEM (FileSystem)
+        // =========================================================================
+        AIWindowsLight.FileSystem = (() => {
+            let fs = AIWindowsLight.Utils.storage('fileSystem') || {
+                'C:/': {
+                    'Users': {
+                        'AI_User': {
+                            'Documents': {
+                                'Welcome.txt': { content: 'Welcome to AI-Windows Light! This is a simple text file.', type: 'txt' },
+                                'MyProject.doc': { content: 'This is an example DOC file.', type: 'doc' },
+                            },
+                            'Desktop': {}
+                        }
+                    },
+                    'System32': { locked: true }
+                }
+            };
+
+            /** Saves the current state of the file system to localStorage. */
+            const saveFS = () => AIWindowsLight.Utils.storage('fileSystem', fs);
+
+            /**
+             * Finds a path in the file system object.
+             * @param {string} path - The path (e.g., 'C:/Users/AI_User/Documents').
+             * @returns {object|null} The object at the path or null if not found.
+             */
+            const getPath = (path) => {
+                const parts = path.split('/').filter(p => p);
+                let current = fs;
+                for (const part of parts) {
+                    if (current[part]) {
+                        current = current[part];
+                    } else {
+                        return null;
+                    }
+                }
+                return current;
+            };
+
+            /**
+             * Creates a new file (mostly text for now).
+             * @param {string} parentPath - The folder path.
+             * @param {string} name - File name.
+             * @param {string} type - File type (e.g., 'txt').
+             * @param {string} content - File content.
+             */
+            const createFile = (parentPath, name, type, content = '') => {
+                const folder = getPath(parentPath);
+                if (folder && !folder.locked) {
+                    if (folder[name]) {
+                        AIWindowsLight.Utils.showToast(`File ${name} already exists!`);
+                        return false;
+                    }
+                    folder[name] = { content, type, lastModified: Date.now() };
+                    saveFS();
+                    return true;
+                }
+                AIWindowsLight.Utils.showToast('Error: Cannot create file in this folder.');
+                return false;
+            };
+
+            /**
+             * Deletes a file or folder.
+             * @param {string} path - The full path to delete.
+             */
+            const deletePath = (path) => {
+                const parts = path.split('/').filter(p => p);
+                const name = parts.pop();
+                if (!name) return false;
+
+                const parentPath = parts.join('/');
+                const parent = getPath(parentPath);
+
+                if (parent && parent[name] && !parent[name].locked) {
+                    delete parent[name];
+                    saveFS();
+                    return true;
+                }
+                AIWindowsLight.Utils.showToast('Error: Cannot delete system files or non-existent items.');
+                return false;
+            };
+
+            /**
+             * Renames a file or folder.
+             */
+            const renamePath = (path, newName) => {
+                const parts = path.split('/').filter(p => p);
+                const oldName = parts.pop();
+                if (!oldName || oldName === newName) return false;
+
+                const parentPath = parts.join('/');
+                const parent = getPath(parentPath);
+
+                if (parent && parent[oldName] && !parent[oldName].locked) {
+                    if (parent[newName]) {
+                        AIWindowsLight.Utils.showToast(`Name ${newName} already exists!`);
+                        return false;
+                    }
+                    parent[newName] = parent[oldName];
+                    delete parent[oldName];
+                    saveFS();
+                    return true;
+                }
+                return false;
+            }
+
+            /**
+             * Gets the file content.
+             */
+            const getContent = (path) => {
+                const item = getPath(path);
+                return item && item.type === 'txt' ? item.content : null;
+            }
+
+            /**
+             * Sets the file content.
+             */
+            const setContent = (path, content) => {
+                const item = getPath(path);
+                if (item && item.type === 'txt') {
+                    item.content = content;
+                    item.lastModified = Date.now();
+                    saveFS();
+                    return true;
+                }
+                return false;
+            }
+
+            return {
+                getPath,
+                createFile,
+                deletePath,
+                renamePath,
+                getContent,
+                setContent,
+                saveFS // Used by Notepad
+            };
+        })();
+
+        // =========================================================================
+        // | 4. WINDOW MANAGER (WindowManager)
+        // =========================================================================
+        AIWindowsLight.WindowManager = (() => {
+            const container = document.getElementById('windows-container');
+            let focusedWindow = null;
+            let windowCount = 0;
+
+            /**
+             * Creates the core HTML for a window.
+             * @param {string} title - Window title.
+             * @param {string} iconSvg - Inline SVG for the icon.
+             * @param {string} id - Unique window ID.
+             * @returns {HTMLElement} The window element.
+             */
+            const createBaseWindow = (title, iconSvg, id) => {
+                const windowEl = document.createElement('div');
+                windowEl.className = 'window opening';
+                windowEl.id = id;
+                windowEl.innerHTML = `
+                    <div class="window-header">
+                        <div class="window-title">${iconSvg} <span style="margin-left: 5px;">${title}</span></div>
+                        <div class="window-controls">
+                            <div class="window-control-btn minimize-btn" title="Minimize"><div class="svg-minimize"></div></div>
+                            <div class="window-control-btn maximize-btn" title="Maximize"><div class="svg-maximize"></div></div>
+                            <div class="window-control-btn close-btn" title="Close"><div class="svg-close"></div></div>
+                        </div>
+                    </div>
+                    <div class="window-content"></div>
+                    <div class="resize-handle"></div>
+                `;
+
+                // Set initial position
+                const top = 50 + (windowCount * 10) % 150;
+                const left = 50 + (windowCount * 10) % 150;
+                windowEl.style.cssText = `top: ${top}px; left: ${left}px; width: 600px; height: 400px;`;
+                windowEl.dataset.top = top;
+                windowEl.dataset.left = left;
+                windowEl.dataset.width = 600;
+                windowEl.dataset.height = 400;
+
+                windowCount++;
+                container.appendChild(windowEl);
+
+                // Add focus and events
+                setTimeout(() => windowEl.classList.remove('opening'), 100);
+                focusWindow(windowEl);
+                setupWindowEvents(windowEl);
+
+                return windowEl;
+            };
+
+            /**
+             * Sets up drag, resize, and control events for a window.
+             */
+            const setupWindowEvents = (windowEl) => {
+                const header = windowEl.querySelector('.window-header');
+                const resizeHandle = windowEl.querySelector('.resize-handle');
+                const minimizeBtn = windowEl.querySelector('.minimize-btn');
+                const maximizeBtn = windowEl.querySelector('.maximize-btn');
+                const closeBtn = windowEl.querySelector('.close-btn');
+
+                // Focus on click
+                windowEl.addEventListener('mousedown', (e) => {
+                    if (e.target.closest('.window-control-btn') || e.target.closest('.resize-handle')) return;
+                    focusWindow(windowEl);
+                });
+
+                // Drag
+                AIWindowsLight.Utils.makeDraggable(windowEl, header, (id, left, top) => {
+                    if (windowEl.classList.contains('maximized')) return;
+                    windowEl.dataset.left = left;
+                    windowEl.dataset.top = top;
+                });
+
+                // Resize
+                let isResizing = false;
+                let startX, startY, startW, startH;
+
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    if (windowEl.classList.contains('maximized')) return;
+                    isResizing = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    startW = windowEl.offsetWidth;
+                    startH = windowEl.offsetHeight;
+                    windowEl.style.transition = 'none'; // Disable transition during resize
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                });
+
+                const handleMouseMove = (e) => {
+                    if (!isResizing) return;
+                    const deltaX = e.clientX - startX;
+                    const deltaY = e.clientY - startY;
+
+                    const newW = startW + deltaX;
+                    const newH = startH + deltaY;
+
+                    windowEl.style.width = Math.max(newW, 250) + 'px';
+                    windowEl.style.height = Math.max(newH, 150) + 'px';
+                };
+
+                const handleMouseUp = () => {
+                    if (!isResizing) return;
+                    isResizing = false;
+                    windowEl.style.transition = ''; // Restore transition
+                    windowEl.dataset.width = windowEl.offsetWidth;
+                    windowEl.dataset.height = windowEl.offsetHeight;
+                    document.removeEventListener('mousemove', handleMouseMove);
+                    document.removeEventListener('mouseup', handleMouseUp);
+                };
+
+                // Controls
+                minimizeBtn.onclick = () => minimizeWindow(windowEl);
+                maximizeBtn.onclick = () => toggleMaximize(windowEl);
+                closeBtn.onclick = () => closeWindow(windowEl);
+            };
+
+            /** Focuses a window (brings to front, updates UI). */
+            const focusWindow = (windowEl) => {
+                if (focusedWindow) {
+                    focusedWindow.classList.remove('focused');
+                }
+
+                let maxZ = 100;
+                document.querySelectorAll('.window').forEach(w => {
+                    const z = parseInt(w.style.zIndex || 100);
+                    if (z > maxZ) maxZ = z;
+                });
+
+                windowEl.style.zIndex = maxZ + 1;
+                windowEl.classList.add('focused');
+                windowEl.classList.remove('minimized');
+                focusedWindow = windowEl;
+                updateTaskbar();
+            };
+
+            /** Minimizes a window. */
+            const minimizeWindow = (windowEl) => {
+                windowEl.classList.add('minimized');
+                windowEl.classList.remove('focused');
+                updateTaskbar();
+                // Find next highest z-index window to focus (or null)
+                const nextFocus = Array.from(document.querySelectorAll('.window:not(.minimized)'))
+                    .sort((a, b) => (parseInt(b.style.zIndex) || 100) - (parseInt(a.style.zIndex) || 100))[0];
+                if (nextFocus) focusWindow(nextFocus);
+            };
+
+            /** Toggles between maximized and normal state. */
+            const toggleMaximize = (windowEl) => {
+                if (windowEl.classList.contains('maximized')) {
+                    // Restore
+                    windowEl.classList.remove('maximized');
+                    windowEl.style.top = windowEl.dataset.top + 'px';
+                    windowEl.style.left = windowEl.dataset.left + 'px';
+                    windowEl.style.width = windowEl.dataset.width + 'px';
+                    windowEl.style.height = windowEl.dataset.height + 'px';
+                } else {
+                    // Maximize (save current state first)
+                    windowEl.dataset.top = windowEl.offsetTop;
+                    windowEl.dataset.left = windowEl.offsetLeft;
+                    windowEl.dataset.width = windowEl.offsetWidth;
+                    windowEl.dataset.height = windowEl.offsetHeight;
+
+                    windowEl.classList.add('maximized');
+                    windowEl.style.top = '0';
+                    windowEl.style.left = '0';
+                    windowEl.style.width = '100vw';
+                    windowEl.style.height = `calc(100vh - ${AIWindowsLight.Settings.TASKBAR_HEIGHT}px)`;
+                }
+            };
+
+            /** Closes a window. */
+            const closeWindow = (windowEl) => {
+                if (windowEl.classList.contains('closing')) return;
+
+                windowEl.classList.add('closing');
+                windowEl.classList.remove('focused');
+
+                // Cleanup app-specific resources
+                if (windowEl.dataset.instanceId) {
+                    AIWindowsLight.AppManager.removeAppInstance(windowEl.dataset.instanceId);
+                }
+
+                setTimeout(() => {
+                    windowEl.remove();
+                    updateTaskbar();
+                    // Try to focus the next highest window
+                    const nextFocus = Array.from(document.querySelectorAll('.window'))
+                        .sort((a, b) => (parseInt(b.style.zIndex) || 100) - (parseInt(a.style.zIndex) || 100))[0];
+                    if (nextFocus) focusWindow(nextFocus);
+                }, 200);
+            };
+
+            /** Updates the taskbar to reflect open windows. */
+            const updateTaskbar = () => {
+                const taskbarSection = document.querySelector('.taskbar-section:first-child');
+                const currentDynamicIcons = taskbarSection.querySelectorAll('.taskbar-dynamic-icon');
+                currentDynamicIcons.forEach(el => el.remove());
+
+                document.querySelectorAll('.window').forEach(windowEl => {
+                    const appName = windowEl.dataset.app;
+                    const instanceId = windowEl.dataset.instanceId;
+                    const isFocused = windowEl.classList.contains('focused');
+                    const isMinimized = windowEl.classList.contains('minimized');
+
+                    const icon = AIWindowsLight.AppManager.getApp(appName).icon;
+                    const title = windowEl.querySelector('.window-title > span').textContent;
+
+                    const dynamicIcon = document.createElement('div');
+                    dynamicIcon.className = 'taskbar-app-icon taskbar-dynamic-icon';
+                    if (!isMinimized) dynamicIcon.classList.add('active');
+                    if (isFocused) dynamicIcon.style.boxShadow = `inset 0 -3px 0 var(--color-primary)`;
+                    dynamicIcon.title = title;
+                    dynamicIcon.innerHTML = icon;
+                    dynamicIcon.onclick = () => {
+                        if (isFocused && !isMinimized) {
+                            minimizeWindow(windowEl);
+                        } else {
+                            focusWindow(windowEl);
+                        }
+                    };
+                    dynamicIcon.dataset.instanceId = instanceId;
+
+                    // Insert after the quick launch icons
+                    taskbarSection.insertBefore(dynamicIcon, document.getElementById('taskbar-clock').parentElement.previousSibling);
+                });
+            };
+
+            return {
+                createBaseWindow,
+                focusWindow,
+                closeWindow: (instanceId) => {
+                    const windowEl = document.querySelector(`.window[data-instance-id="${instanceId}"]`);
+                    if (windowEl) closeWindow(windowEl);
+                },
+                getTopWindow: () => focusedWindow
+            };
+        })();
+
+        // =========================================================================
+        // | 5. APPLICATION MANAGER (AppManager)
+        // =========================================================================
+        AIWindowsLight.AppManager = (() => {
+            let appInstances = {};
+            let instanceIdCounter = 0;
+
+            const APPS = {
+                explorer: {
+                    name: 'Explorer',
+                    icon: '<svg class="icon-svg svg-folder"><path d="M10 4L12 6H28V28H4V4H10z"/></svg>',
+                    run: runExplorer
+                },
+                browser: {
+                    name: 'Browser',
+                    icon: '<svg class="icon-svg svg-browser" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="currentColor"/><circle cx="16" cy="16" r="10" fill="white"/><path d="M16 6a10 10 0 010 20z" fill="currentColor"/><path d="M6 16h20" stroke="white" stroke-width="2"/></svg>',
+                    run: runBrowser
+                },
+                notepad: {
+                    name: 'Notepad',
+                    icon: '<svg class="icon-svg svg-notepad" viewBox="0 0 32 32"><rect x="6" y="4" width="20" height="24" rx="2" fill="#fff"/><path d="M6 4H26V28H6z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>',
+                    run: runNotepad
+                },
+                settings: {
+                    name: 'Settings',
+                    icon: '<svg class="icon-svg svg-settings" viewBox="0 0 32 32"><path d="M16 6.8l-1.9-3.3a1 1 0 00-1 0L12.1 6.8a1 1 0 00-.7.7l-2 3.5a1 1 0 00-.5.6l-4.1 1.4a1 1 0 00-.6.5L2 15.3a1 1 0 000 1.4l2.2 1.6a1 1 0 00.6.5l4.1 1.4a1 1 0 00.5.6l2 3.5a1 1 0 00.7.7l1.9 3.3a1 1 0 001 0l1.9-3.3a1 1 0 00.7-.7l2-3.5a1 1 0 00.5-.6l4.1-1.4a1 1 0 00.6-.5l2.2-1.6a1 1 0 000-1.4l-2.2-1.6a1 1 0 00-.6-.5l-4.1-1.4a1 1 0 00-.5-.6l-2-3.5a1 1 0 00-.7-.7zM16 20a4 4 0 100-8 4 4 0 000 8z" fill="currentColor"/></svg>',
+                    run: runSettings
+                },
+                recycle: {
+                    name: 'Recycle Bin',
+                    icon: '<svg class="icon-svg svg-trash" viewBox="0 0 32 32"><path d="M25 8h-4a1 1 0 00-1-1h-6a1 1 0 00-1 1h-4a1 1 0 00-1 1v2h18V9a1 1 0 00-1-1zM26 12H6v14a2 2 0 002 2h16a2 2 0 002-2V12zm-8 4v8h-2v-8h2zm-4 0v8h-2v-8h2z"/></svg>',
+                    run: runRecycle
+                }
+            };
+
+            /**
+             * Opens an application.
+             * @param {string} appName - Name of the application.
+             * @param {object} args - Arguments for the app (e.g., file path).
+             */
+            const openApp = (appName, args = {}) => {
+                const app = APPS[appName];
+                if (!app) return AIWindowsLight.Utils.showToast(`App "${appName}" not found!`);
+
+                const instanceId = `${appName}-${instanceIdCounter++}`;
+                const windowEl = AIWindowsLight.WindowManager.createBaseWindow(app.name, app.icon, `win-${instanceId}`);
+                windowEl.dataset.app = appName;
+                windowEl.dataset.instanceId = instanceId;
+
+                appInstances[instanceId] = { id: instanceId, name: appName, windowEl, args };
+
+                // Run app-specific logic
+                app.run(windowEl, args);
+                AIWindowsLight.WindowManager.updateTaskbar();
+            };
+
+            const removeAppInstance = (instanceId) => {
+                const instance = appInstances[instanceId];
+                if (instance && instance.name === 'notepad' && instance.saveTimer) {
+                    clearInterval(instance.saveTimer); // Stop auto-save
+                }
+                delete appInstances[instanceId];
+            };
+
+            // --- APP Implementations ---
+
+            // Explorer
+            function runExplorer(windowEl, args) {
+                const contentEl = windowEl.querySelector('.window-content');
+                let currentPath = args.path || 'C:/Users/AI_User/Documents';
+                let selectedItem = null;
+
+                contentEl.innerHTML = `
+                    <div class="app-content">
+                        <div class="explorer-sidebar" id="${windowEl.id}-sidebar"></div>
+                        <div class="explorer-main" id="${windowEl.id}-main"></div>
+                    </div>
+                `;
+                const sidebar = document.getElementById(`${windowEl.id}-sidebar`);
+                const main = document.getElementById(`${windowEl.id}-main`);
+
+                const renderTree = (obj, parentPath = '') => {
+                    sidebar.innerHTML = '';
+                    const parts = parentPath.split('/').filter(p => p);
+                    const renderRecursive = (obj, path) => {
+                        Object.keys(obj).forEach(key => {
+                            if (typeof obj[key] === 'object' && !obj[key].type) { // It's a folder
+                                const fullPath = `${path}/${key}`;
+                                const el = document.createElement('div');
+                                el.className = 'folder-tree-item';
+                                if (fullPath.endsWith(currentPath)) el.classList.add('current-folder');
+                                el.innerHTML = `<svg class="icon-svg svg-folder"><path d="M10 4L12 6H28V28H4V4H10z"/></svg> <span style="margin-left: 5px;">${key}</span>`;
+                                el.onclick = () => {
+                                    if (fullPath !== currentPath) {
+                                        currentPath = fullPath;
+                                        renderMainView();
+                                        renderTree(AIWindowsLight.FileSystem.getPath('C:/'), 'C:');
+                                    }
+                                };
+                                sidebar.appendChild(el);
+                                // Simple non-expandable for LIGHT version
+                            }
+                        });
+                    };
+                    renderRecursive(obj, parentPath);
+                };
+
+                const renderMainView = () => {
+                    main.innerHTML = '';
+                    selectedItem = null;
+                    const folder = AIWindowsLight.FileSystem.getPath(currentPath);
+                    if (!folder) {
+                        main.innerHTML = '<p>Folder not found.</p>';
+                        return;
+                    }
+                    windowEl.querySelector('.window-title > span').textContent = `${folder.name || 'Explorer'} - ${currentPath}`;
+
+                    Object.keys(folder).filter(key => key !== 'locked').forEach(key => {
+                        const item = folder[key];
+                        const itemPath = `${currentPath}/${key}`;
+                        const itemEl = document.createElement('div');
+                        itemEl.className = item.type ? 'file-item fs-item' : 'folder-item fs-item';
+                        itemEl.dataset.path = itemPath;
+                        itemEl.dataset.name = key;
+                        itemEl.dataset.type = item.type || 'folder';
+
+                        let iconSvg = '';
+                        if (item.type === 'txt') {
+                            iconSvg = '<svg class="icon-svg svg-file-txt" viewBox="0 0 32 32"><rect x="6" y="4" width="20" height="24" rx="2" fill="#fff"/><path d="M6 4H26V28H6z" stroke="#0078d4" stroke-width="1.5" fill="none"/></svg>';
+                        } else if (item.type === 'doc') {
+                            iconSvg = '<svg class="icon-svg svg-file-txt" viewBox="0 0 32 32"><rect x="6" y="4" width="20" height="24" rx="2" fill="#fff"/><rect x="10" y="8" width="12" height="2" fill="#0078d4"/><path d="M6 4H26V28H6z" stroke="#0078d4" stroke-width="1.5" fill="none"/></svg>';
+                        } else {
+                            iconSvg = '<svg class="icon-svg svg-folder"><path d="M10 4L12 6H28V28H4V4H10z"/></svg>';
+                        }
+
+                        itemEl.innerHTML = `${iconSvg} <span>${key}</span>`;
+
+                        // Select on single click
+                        itemEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            document.querySelectorAll('.fs-item').forEach(i => i.classList.remove('selected'));
+                            itemEl.classList.add('selected');
+                            selectedItem = { path: itemPath, element: itemEl };
+                        });
+
+                        // Open on double click
+                        itemEl.addEventListener('dblclick', () => {
+                            if (item.type === 'txt') {
+                                openApp('notepad', { path: itemPath });
+                            } else if (item.type === 'doc') {
+                                AIWindowsLight.Utils.showToast('DOC files are not supported in this LIGHT version.');
+                            } else {
+                                // Open folder
+                                currentPath = itemPath;
+                                renderMainView();
+                                renderTree(AIWindowsLight.FileSystem.getPath('C:/'), 'C:');
+                            }
+                        });
+
+                        // Drag and Drop (simple file movement)
+                        itemEl.setAttribute('draggable', true);
+                        itemEl.addEventListener('dragstart', (e) => {
+                            e.dataTransfer.setData('text/plain', itemPath);
+                            e.dataTransfer.effectAllowed = 'move';
+                        });
+
+                        // Drop target (folder only)
+                        if (!item.type) { // It's a folder
+                            itemEl.addEventListener('dragover', (e) => {
+                                e.preventDefault();
+                                itemEl.style.outline = '2px dashed var(--color-primary)';
+                            });
+                            itemEl.addEventListener('dragleave', () => {
+                                itemEl.style.outline = 'none';
+                            });
+                            itemEl.addEventListener('drop', (e) => {
+                                e.preventDefault();
+                                itemEl.style.outline = 'none';
+                                const draggedPath = e.dataTransfer.getData('text/plain');
+                                const draggedName = draggedPath.split('/').pop();
+                                const newPath = `${itemPath}/${draggedName}`;
+
+                                if (draggedPath === newPath) return;
+
+                                // Very basic move implementation (rename in new path)
+                                const draggedItem = AIWindowsLight.FileSystem.getPath(draggedPath);
+                                if (!draggedItem) return AIWindowsLight.Utils.showToast('Error: Invalid file path.');
+
+                                if (AIWindowsLight.FileSystem.createFile(itemPath, draggedName, draggedItem.type, draggedItem.content)) {
+                                    AIWindowsLight.FileSystem.deletePath(draggedPath);
+                                    renderMainView(); // Re-render target folder
+                                    AIWindowsLight.Utils.showToast(`Moved ${draggedName} to ${key}`);
+                                } else {
+                                    AIWindowsLight.Utils.showToast(`Failed to move ${draggedName}.`);
+                                }
+                            });
+                        }
+
+                        // Context menu for files/folders
+                        itemEl.addEventListener('contextmenu', (e) => {
+                            e.preventDefault();
+                            document.querySelectorAll('.fs-item').forEach(i => i.classList.remove('selected'));
+                            itemEl.classList.add('selected');
+                            selectedItem = { path: itemPath, element: itemEl };
+                            AIWindowsLight.Desktop.showContextMenu(e, 'file', { path: itemPath, name: key, type: item.type, windowEl: windowEl });
+                        });
+
+                        main.appendChild(itemEl);
+                    });
+
+                    // Context menu for the main folder area
+                    main.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        AIWindowsLight.Desktop.showContextMenu(e, 'desktop', { path: currentPath, windowEl: windowEl });
+                    });
+                    main.addEventListener('click', () => {
+                        document.querySelectorAll('.fs-item').forEach(i => i.classList.remove('selected'));
+                        selectedItem = null;
+                    });
+                };
+
+                // Initial render
+                renderTree(AIWindowsLight.FileSystem.getPath('C:/'), 'C:');
+                renderMainView();
+
+                // Store app-specific refresh function
+                appInstances[windowEl.dataset.instanceId].refresh = () => {
+                    renderTree(AIWindowsLight.FileSystem.getPath('C:/'), 'C:');
+                    renderMainView();
+                };
+            }
+
+            // Browser
+            function runBrowser(windowEl) {
+                const contentEl = windowEl.querySelector('.window-content');
+                let currentPage = 'home';
+                const pages = {
+                    home: '<h2>Welcome to AI-Browser Light</h2><p>This is a simulated web browser. <a data-page="search">Search</a> or read <a data-page="news">News</a>.</p>',
+                    search: '<h2>Search Results for "AI"</h2><p>1. <a href="#">AIWindowsLight.com</a> - Minimal OS Demo</p><p>2. <a href="#">Wikipedia.org</a> - Article on Artificial Intelligence</p><p>3. <a href="#">FakeResult.net</a> - Irrelevant link</p>',
+                    news: '<h2>Latest Fake News</h2><p><strong>BREAKING:</strong> OS Theme War Declared!</p><p><strong>Local:</strong> JavaScript Dominates Local Development</p><p><strong>Tech:</strong> New CSS features speed up UI by 1000%</p>'
+                };
+
+                contentEl.innerHTML = `
+                    <div class="browser-toolbar">
+                        <input type="text" value="ai-browser-light.local/${currentPage}" readonly>
+                        <div class="taskbar-button" data-action="go-home">🏠</div>
+                    </div>
+                    <div class="browser-page"></div>
+                `;
+
+                const pageView = contentEl.querySelector('.browser-page');
+                const addressBar = contentEl.querySelector('input');
+
+                const loadPage = (pageKey) => {
+                    currentPage = pageKey;
+                    addressBar.value = `ai-browser-light.local/${pageKey}`;
+                    pageView.innerHTML = pages[pageKey] || pages.home;
+                    windowEl.querySelector('.window-title > span').textContent = `Browser - ${pageKey}`;
+
+                    // Re-bind links
+                    pageView.querySelectorAll('a[data-page]').forEach(link => {
+                        link.onclick = (e) => {
+                            e.preventDefault();
+                            loadPage(link.dataset.page);
+                        };
+                    });
+                };
+
+                contentEl.querySelector('[data-action="go-home"]').onclick = () => loadPage('home');
+                loadPage(currentPage);
+            }
+
+            // Notepad
+            function runNotepad(windowEl, args) {
+                const contentEl = windowEl.querySelector('.window-content');
+                const path = args.path;
+                let fileName = path ? path.split('/').pop() : 'Untitled.txt';
+                let content = path ? AIWindowsLight.FileSystem.getContent(path) : AIWindowsLight.Utils.storage('notepad-draft') || '';
+
+                if (content === null) {
+                    content = 'Could not load file.';
+                    fileName = 'Error.txt';
+                }
+
+                windowEl.querySelector('.window-title > span').textContent = `${fileName} - Notepad`;
+
+                contentEl.innerHTML = `<textarea id="notepad-textarea">${content}</textarea>`;
+                const textarea = contentEl.querySelector('textarea');
+
+                // Auto-save draft to localStorage (or file if applicable) every 5 seconds
+                const saveDraft = () => {
+                    const currentContent = textarea.value;
+                    if (path) {
+                        AIWindowsLight.FileSystem.setContent(path, currentContent);
+                    } else {
+                        AIWindowsLight.Utils.storage('notepad-draft', currentContent);
+                    }
+                };
+
+                // Add an interval timer to the app instance for cleanup
+                const saveTimer = setInterval(saveDraft, 5000);
+                appInstances[windowEl.dataset.instanceId].saveTimer = saveTimer;
+
+                // Handle Ctrl+S for download
+                textarea.addEventListener('keydown', (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                        const blob = new Blob([textarea.value], { type: 'text/plain;charset=utf-8' });
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(a.href);
+                        AIWindowsLight.Utils.showToast(`File ${fileName} downloaded!`);
+                    }
+                });
+            }
+
+            // Settings
+            function runSettings(windowEl) {
+                const contentEl = windowEl.querySelector('.window-content');
+                const initialTheme = AIWindowsLight.Settings.THEME;
+                const initialSound = AIWindowsLight.Settings.SOUND_ENABLED;
+
+                contentEl.innerHTML = `
+                    <div class="settings-grid">
+                        <h2>Personalization</h2>
+                        <div class="setting-item">
+                            <span>Dark Theme</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="theme-toggle" ${initialTheme === 'dark' ? 'checked' : ''}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <span>System Sounds</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="sound-toggle" ${initialSound ? 'checked' : ''}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                `;
+
+                document.getElementById('theme-toggle').onchange = (e) => {
+                    const theme = e.target.checked ? 'dark' : 'light';
+                    AIWindowsLight.Utils.setTheme(theme);
+                    AIWindowsLight.Settings.THEME = theme;
+                    AIWindowsLight.Settings.saveIconPosition(); // Re-save settings
+                };
+
+                document.getElementById('sound-toggle').onchange = (e) => {
+                    const enabled = e.target.checked;
+                    AIWindowsLight.Utils.setSoundState(enabled);
+                    AIWindowsLight.Settings.SOUND_ENABLED = enabled;
+                    AIWindowsLight.Settings.saveIconPosition(); // Re-save settings
+                };
+            }
+
+            // Recycle Bin (Minimal)
+            function runRecycle(windowEl) {
+                 windowEl.querySelector('.window-content').innerHTML = `
+                    <div style="padding: 20px; text-align: center;">
+                        <h2>Recycle Bin</h2>
+                        <p>This is the LIGHT version. It deletes files permanently, immediately!</p>
+                        <p>It's always empty.</p>
+                    </div>
+                 `;
+            }
+
+            return {
+                openApp,
+                removeAppInstance,
+                getApp: (appName) => APPS[appName],
+                getAppInstance: (instanceId) => appInstances[instanceId],
+                getAppInstances: () => Object.values(appInstances)
+            };
+        })();
+
+        // =========================================================================
+        // | 6. DESKTOP & UI CONTROLS (Desktop)
+        // =========================================================================
+        AIWindowsLight.Desktop = (() => {
+            const desktopEl = document.getElementById('desktop');
+            const taskbarEl = document.getElementById('taskbar');
+            const startMenuEl = document.getElementById('start-menu');
+            const startButton = document.getElementById('start-button');
+            const desktopContextMenu = document.getElementById('desktop-context-menu');
+            const fileContextMenu = document.getElementById('file-context-menu');
+            let contextMenuData = {}; // Store data passed to the context menu handler
+
+            const icons = document.querySelectorAll('.desktop-icon');
+
+            /** Initializes desktop icons and background. */
+            const initDesktop = () => {
+                // Apply saved theme
+                AIWindowsLight.Utils.setTheme(AIWindowsLight.Settings.THEME);
+                AIWindowsLight.Utils.setSoundState(AIWindowsLight.Settings.SOUND_ENABLED);
+
+                // Setup icons
+                icons.forEach(icon => {
+                    const pos = AIWindowsLight.Settings.INITIAL_ICON_POSITIONS[icon.id];
+                    icon.style.top = pos.top + 'px';
+                    icon.style.left = pos.left + 'px';
+                    AIWindowsLight.Utils.makeDraggable(icon, icon, AIWindowsLight.Settings.saveIconPosition);
+
+                    icon.addEventListener('click', () => {
+                        document.querySelectorAll('.desktop-icon').forEach(i => i.classList.remove('selected'));
+                        icon.classList.add('selected');
+                    });
+                    icon.addEventListener('dblclick', () => AIWindowsLight.AppManager.openApp(icon.dataset.app));
+                });
+
+                // Particle effect (Simple requestAnimationFrame animation)
+                const particleLayer = document.getElementById('particle-layer');
+                for (let i = 0; i < 10; i++) {
+                    const p = document.createElement('div');
+                    p.className = 'particle';
+                    const size = Math.random() * 5 + 2;
+                    p.style.width = p.style.height = `${size}px`;
+                    p.style.left = `${Math.random() * 100}vw`;
+                    p.style.top = `${Math.random() * 100}vh`;
+                    p.style.setProperty('--p-x', `${(Math.random() - 0.5) * 50}px`);
+                    p.style.setProperty('--p-y', `${(Math.random() - 0.5) * 50}px`);
+                    p.style.animationDelay = `${Math.random() * 10}s`;
+                    particleLayer.appendChild(p);
+                }
+
+                // Initial show of desktop
+                desktopEl.classList.remove('hidden');
+                taskbarEl.classList.remove('hidden');
+            };
+
+            /** Initializes taskbar functionality. */
+            const initTaskbar = () => {
+                // Clock update
+                const clock = document.getElementById('taskbar-clock');
+                setInterval(() => {
+                    const now = new Date();
+                    clock.innerHTML = `<div>${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div><div>${now.toLocaleDateString()}</div>`;
+                }, 1000);
+
+                // Start button
+                startButton.onclick = toggleStartMenu;
+
+                // Quick launch icons
+                document.querySelectorAll('.taskbar-app-icon[data-app]').forEach(icon => {
+                    icon.onclick = () => AIWindowsLight.AppManager.openApp(icon.dataset.app);
+                });
+            };
+
+            /** Toggles the Start Menu visibility. */
+            const toggleStartMenu = (e) => {
+                e.stopPropagation();
+                if (startMenuEl.classList.contains('open')) {
+                    startMenuEl.classList.remove('open');
+                    startButton.classList.remove('active');
+                } else {
+                    startMenuEl.classList.add('open');
+                    startButton.classList.add('active');
+                    // Setup start menu links
+                    document.querySelectorAll('#start-menu [data-app]').forEach(tile => {
+                        tile.onclick = (e) => {
+                            e.stopPropagation();
+                            AIWindowsLight.AppManager.openApp(tile.dataset.app);
+                            toggleStartMenu(e);
+                        };
+                    });
+                    document.querySelector('[data-action="open-explorer-docs"]').onclick = () => {
+                        AIWindowsLight.AppManager.openApp('explorer', { path: 'C:/Users/AI_User/Documents' });
+                        toggleStartMenu(e);
+                    };
+                    document.querySelector('[data-action="open-app-settings"]').onclick = () => {
+                        AIWindowsLight.AppManager.openApp('settings');
+                        toggleStartMenu(e);
+                    };
+                }
+            };
+
+            /** Hides menus when clicking outside. */
+            const hideAllMenus = (e) => {
+                // Start Menu
+                if (startMenuEl.classList.contains('open') && !startMenuEl.contains(e.target)) {
+                    toggleStartMenu(e);
+                }
+                // Context Menus
+                desktopContextMenu.style.display = 'none';
+                fileContextMenu.style.display = 'none';
+                document.querySelectorAll('.desktop-icon').forEach(i => i.classList.remove('selected'));
+                document.querySelectorAll('.fs-item').forEach(i => i.classList.remove('selected'));
+            };
+
+            /**
+             * Shows a context menu.
+             * @param {Event} e - Mouse event.
+             * @param {string} type - 'desktop' or 'file'.
+             * @param {object} data - Data to pass to the action handler.
+             */
+            const showContextMenu = (e, type, data = {}) => {
+                e.preventDefault();
+                hideAllMenus(e); // Hide others first
+
+                const menu = type === 'desktop' ? desktopContextMenu : fileContextMenu;
+                contextMenuData = data;
+                menu.style.left = `${e.clientX}px`;
+                menu.style.top = `${e.clientY}px`;
+
+                // Adjust position if it goes off-screen
+                if (e.clientX + menu.offsetWidth > window.innerWidth) {
+                    menu.style.left = `${e.clientX - menu.offsetWidth}px`;
+                }
+                if (e.clientY + menu.offsetHeight > window.innerHeight - AIWindowsLight.Settings.TASKBAR_HEIGHT) {
+                    menu.style.top = `${e.clientY - menu.offsetHeight}px`;
+                }
+
+                menu.style.display = 'block';
+            };
+
+            /** Handles context menu item clicks. */
+            const handleContextMenuAction = (action) => {
+                const { path, name, windowEl } = contextMenuData;
+
+                if (action === 'refresh-desktop') {
+                    AIWindowsLight.Utils.showToast('Desktop Refreshed (No action implemented)');
+                } else if (action === 'create-txt-file') {
+                    let newName = 'New Text Document.txt';
+                    let counter = 1;
+                    while (AIWindowsLight.FileSystem.getPath(`${path}/${newName}`)) {
+                        newName = `New Text Document (${counter++}).txt`;
+                    }
+
+                    if (AIWindowsLight.FileSystem.createFile(path, newName, 'txt')) {
+                        AIWindowsLight.Utils.showToast(`Created ${newName}`);
+                        // If context menu was opened from Explorer, refresh it
+                        if (windowEl && AIWindowsLight.AppManager.getAppInstance(windowEl.dataset.instanceId).refresh) {
+                             AIWindowsLight.AppManager.getAppInstance(windowEl.dataset.instanceId).refresh();
+                        }
+                    }
+                } else if (action === 'file-delete') {
+                    if (AIWindowsLight.FileSystem.deletePath(path)) {
+                        AIWindowsLight.Utils.showToast(`${name} deleted!`);
+                        if (windowEl && AIWindowsLight.AppManager.getAppInstance(windowEl.dataset.instanceId).refresh) {
+                            AIWindowsLight.AppManager.getAppInstance(windowEl.dataset.instanceId).refresh();
+                        }
+                    }
+                } else if (action === 'file-rename') {
+                    const newName = prompt(`Rename ${name} to:`, name);
+                    if (newName && newName !== name) {
+                        if (AIWindowsLight.FileSystem.renamePath(path, newName)) {
+                            AIWindowsLight.Utils.showToast(`${name} renamed to ${newName}`);
+                            if (windowEl && AIWindowsLight.AppManager.getAppInstance(windowEl.dataset.instanceId).refresh) {
+                                AIWindowsLight.AppManager.getAppInstance(windowEl.dataset.instanceId).refresh();
+                            }
+                        } else {
+                            AIWindowsLight.Utils.showToast('Rename failed.');
+                        }
+                    }
+                }
+
+                hideAllMenus({ target: null });
+            };
+
+            /** Initializes global event listeners (hotkeys, general clicks). */
+            const initGlobalEvents = () => {
+                document.addEventListener('mousedown', hideAllMenus);
+                desktopEl.addEventListener('contextmenu', (e) => showContextMenu(e, 'desktop', { path: 'C:/Users/AI_User/Desktop' }));
+
+                // Context menu clicks
+                document.querySelectorAll('.context-menu-item[data-action]').forEach(item => {
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        const action = item.dataset.action;
+                        // Handle submenu logic
+                        if (item.classList.contains('context-menu-submenu')) {
+                            const submenu = item.querySelector('.submenu');
+                            if (submenu) {
+                                document.querySelectorAll('.context-menu .submenu').forEach(s => s.classList.add('hidden'));
+                                submenu.classList.remove('hidden');
+                                submenu.style.left = `${item.offsetWidth}px`;
+                                submenu.style.top = `-${item.offsetTop}px`;
+                            }
+                        } else {
+                            handleContextMenuAction(action);
+                        }
+                    };
+                });
+
+                // Hotkeys
+                document.addEventListener('keydown', (e) => {
+                    // Win + D (Show/Hide Desktop - Minimize all/Restore all)
+                    if (e.key === 'd' && (e.metaKey || e.ctrlKey)) { // Using Ctrl as a fallback for Win key (MetaKey)
+                        e.preventDefault();
+                        const windows = AIWindowsLight.AppManager.getAppInstances().map(i => i.windowEl);
+                        const isAnyVisible = windows.some(w => !w.classList.contains('minimized'));
+
+                        windows.forEach(w => {
+                            if (isAnyVisible) {
+                                w.classList.add('minimized');
+                            } else {
+                                w.classList.remove('minimized');
+                            }
+                        });
+                        AIWindowsLight.WindowManager.updateTaskbar();
+                    }
+
+                    // Alt + F4 (Close active window)
+                    if (e.key === 'F4' && e.altKey) {
+                        e.preventDefault();
+                        const topWindow = AIWindowsLight.WindowManager.getTopWindow();
+                        if (topWindow) {
+                            AIWindowsLight.WindowManager.closeWindow(topWindow.dataset.instanceId);
+                        }
+                    }
+
+                    // Win + E (Open Explorer)
+                    if (e.key === 'e' && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        AIWindowsLight.AppManager.openApp('explorer');
+                    }
+                });
+            };
+
+            return {
+                initDesktop,
+                initTaskbar,
+                initGlobalEvents,
+                showContextMenu
+            };
+        })();
+
+        // =========================================================================
+        // | 7. BOOTSTRAP & ERROR HANDLING
+        // =========================================================================
+        AIWindowsLight.Bootstrap = () => {
+            const bootScreen = document.getElementById('boot-screen');
+            const progressBar = document.getElementById('boot-progress-bar');
+            const startupSound = document.getElementById('startup-sound');
+            let progress = 0;
+
+            const updateProgress = () => {
+                if (progress < 100) {
+                    progress += Math.random() * 5 + 1; // Random progress increase
+                    progressBar.style.width = Math.min(progress, 100) + '%';
+                    requestAnimationFrame(updateProgress);
+                } else {
+                    // Boot sequence complete
+                    AIWindowsLight.Utils.playSound(startupSound);
+                    setTimeout(() => {
+                        bootScreen.style.opacity = '0';
+                        setTimeout(() => bootScreen.remove(), 500);
+                        AIWindowsLight.Desktop.initDesktop();
+                        AIWindowsLight.Desktop.initTaskbar();
+                        AIWindowsLight.Desktop.initGlobalEvents();
+                    }, 500);
+                }
+            };
+
+            updateProgress();
+
+            // Simple global error handler
+            window.onerror = (message, source, lineno, colno, error) => {
+                const errorMessage = `A critical error occurred: ${message}`;
+                AIWindowsLight.Utils.showToast(errorMessage, 5000);
+                console.error("Global Error Caught:", error || message);
+                return true; // Prevents default browser error handling
+            };
+        };
+
+        // Start the OS simulation when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', AIWindowsLight.Bootstrap);
+    </script>
+</body>
 </html>
